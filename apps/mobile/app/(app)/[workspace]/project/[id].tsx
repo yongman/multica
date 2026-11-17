@@ -1,10 +1,11 @@
+import { getServerConfig } from "@/data/server-config-store";
 /**
  * Project detail screen. Single column, scrolling:
  *
  *   Header card (icon + title + description, tap → edit)
  *   Properties section (Status / Priority / Lead — tap chip → picker)
  *   Resources section (read-only by default, "Add" button → resource form)
- *   Related issues (Open / Done bucketed list)
+ *   Related issues (collapsible workflow-ordered status groups)
  *
  * Per-record realtime: `useProjectRealtime(id, onDeleted=back)` subscribes
  * to `project:updated` (full replace) and `project:deleted` (pop back).
@@ -96,7 +97,7 @@ export default function ProjectDetail() {
 
   const onPressMore = () => {
     if (!project) return;
-    const wsUrl = process.env.EXPO_PUBLIC_WEB_URL;
+    const wsUrl = getServerConfig().webUrl;
     const actions = ["cancel", isPinned ? "unpin" : "pin", "edit"];
     if (wsUrl) actions.push("open_web");
     if (canDelete) actions.push("delete");

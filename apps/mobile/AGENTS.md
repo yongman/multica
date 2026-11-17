@@ -26,6 +26,7 @@ These rules apply only to `apps/mobile/`, in addition to the [root instructions]
 - Add RNR components with `npx @react-native-reusables/cli@latest add <name>`. Review generated changes and preserve local customizations. Keep default variants/spacing unless a concrete product need requires changes.
 - Generic primitives live in `components/ui/`; domain compositions live in `components/<domain>/`. Use the existing `cn()` in `lib/utils.ts` and semantic tokens.
 - Screens have titles, tab bars have icons, secondary labels use type-aware helpers, and multiple trailing row elements stack vertically. Check long text, keyboard, safe areas, scrolling, and both themes.
+- Keyboard-aware screens use `components/ui/keyboard-avoiding-view.tsx`: native iOS behavior is preserved, while Android uses keyboard-controller frame events for edge-to-edge windows. Keep authentication forms scrollable on small screens.
 
 ### Theming model
 
@@ -65,6 +66,7 @@ Use the existing helpers rather than rebuilding request or subscription plumbing
 - UI-consumed responses follow the root API compatibility rules. Raw `fetch` is reserved for writes whose response body is unused. Fallback values must satisfy the expected success type.
 - Forward each query's `signal` through the API method to fetch. Preserve the request timeout and caller-abort forwarding in `data/api.ts`; do not replace its cancellation implementation without checking the supported mobile runtime.
 - Preserve the API client's request IDs/logging and the idempotent 401 cleanup in `app/_layout.tsx` (auth, workspace, Query cache, navigation). Mobile uses bearer auth; do not copy browser cookie/CSRF plumbing.
+- Use `data/use-session-mutation.ts` for mutations so dispatch and callbacks stay bound to the invocation's session epoch. After awaiting inside a lifecycle callback, call its context's `assertCurrentSession()` before changing caches or stores. Hand-written async actions must also check their captured epoch before restoring drafts or applying results.
 - Use feature key factories, with `wsId` for workspace data and separate account-level keys for cross-workspace summaries. Do not hardcode keys or require every key to have the same number of segments.
 - **Optimistic-update exception:** inbox mark-read may patch synchronously before navigation to avoid an unread row in the iOS transition snapshot. Keep this inside the mutation, capture rollback state before patching, and refresh on settle. It is not permission to optimistically create/delete/leave or to generalize navigation-time optimism.
 - Other mutations follow the root optimistic-update policy; message sends retain visible pending/retry states.
@@ -88,7 +90,7 @@ pnpm --filter @multica/mobile lint
 pnpm --filter @multica/mobile test
 ```
 
-- Root frontend checks exclude mobile. `.github/workflows/mobile-verify.yml` runs mobile checks without building native artifacts or verifying native rendering. Signed Android APKs use `scripts/android-release.mjs`; see `docs/android-release.md`.
+- Root frontend checks exclude mobile. `.github/workflows/mobile-verify.yml` runs mobile checks and builds an unsigned Android Release with an embedded bundle. It does not build an IPA or verify native rendering. Signed APKs use `scripts/android-release.mjs`; see `docs/android-release.md`.
 - For UI changes, verify the affected flow in the simulator/device, including themes, keyboard/scrolling, and navigation. For shared semantics or realtime changes, change the same data from web and confirm mobile catches up without manual refresh, including after reconnect.
 - Test parsing/transforms in the existing Vitest setup. Preserve `scripts/ios-run.test.sh` coverage when changing the native build wrapper.
 - Report which checks ran and which native/cross-client checks were unavailable. Do not claim visual or release verification from typecheck/unit tests alone.

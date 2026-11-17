@@ -1,3 +1,4 @@
+import { issueWebUrl } from "@/lib/issue-web-url";
 /**
  * Issue detail screen.
  *
@@ -95,6 +96,7 @@ export default function IssueDetail() {
     await Promise.all([
       detail.refetch(),
       qc.invalidateQueries({ queryKey: issueKeys.timeline(wsId, id) }),
+      qc.invalidateQueries({ queryKey: issueKeys.children(wsId, id) }),
     ]);
   }, [detail, qc, wsId, id]);
 
@@ -116,10 +118,7 @@ export default function IssueDetail() {
   // the timeline list, not in this menu — one entry per action.
   const onPressMore = useCallback(() => {
     if (!issue || !wsSlug) return;
-    const webUrl = process.env.EXPO_PUBLIC_WEB_URL;
-    const issueLink = webUrl
-      ? `${webUrl}/${wsSlug}/issue/${issue.identifier}`
-      : null;
+    const issueLink = issueWebUrl(wsSlug, issue.identifier);
     const actions = ["cancel", "pin"];
     if (isPinned) actions[1] = "unpin";
     actions.push("edit");
