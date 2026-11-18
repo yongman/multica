@@ -10,7 +10,7 @@ permissions:
 jobs:
   build:
     if: github.ref_type == 'tag' && !github.event.deleted
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, multica-android-cd]
     timeout-minutes: 45
     outputs:
       publish: ${{ steps.plan.outputs.publish }}
@@ -68,7 +68,7 @@ jobs:
   publish:
     needs: build
     if: needs.build.outputs.publish == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, multica-android-cd]
     timeout-minutes: 15
     permissions:
       contents: write
