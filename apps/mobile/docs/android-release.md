@@ -117,6 +117,9 @@ tag. That commit must already be in `origin/android` history and contain
 Use a new tag name. Check the repository's existing tags before choosing one
 because tags are shared across branches.
 
+Both release jobs use the repository's Linux x64 self-hosted runner with the
+`multica-android-cd` label. Keep that runner online before pushing a release tag.
+
 The publish job makes a fast-forward push to `android` with its own
 `GITHUB_TOKEN` and `contents: write`. Enable Actions on the fork and ensure
 the repository's rules allow the Actions identity to push to `android`.
