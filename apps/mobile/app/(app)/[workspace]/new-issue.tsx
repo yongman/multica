@@ -25,12 +25,16 @@ import {
   View,
 } from "react-native";
 import { KeyboardAvoidingView } from "@/components/ui/keyboard-avoiding-view";
-import { Stack, router, useNavigation } from "expo-router";
+import { Stack, router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
+import type { Project } from "@multica/core/types";
 import { canAssignAgentToIssue } from "@multica/core/permissions/rules";
 import { AgentPickerSheet } from "@/components/chat/agent-picker-sheet";
 import { SubmitIssueButton } from "@/components/issue/submit-issue-button";
-import { CreateFormAttributeRow } from "@/components/issue/create-form-attribute-row";
+import {
+  CreateFormAttributeRow,
+  CreateFormProjectChip,
+} from "@/components/issue/create-form-attribute-row";
 import { MentionSuggestionBar } from "@/components/issue/mention-suggestion-bar";
 import { DescriptionField } from "@/components/issue/description-field";
 import { Button } from "@/components/ui/button";
@@ -41,6 +45,7 @@ import { useAuthStore } from "@/data/auth-store";
 import { useCreateIssue, useQuickCreateIssue } from "@/data/mutations/issues";
 import { agentListOptions } from "@/data/queries/agents";
 import { memberListOptions } from "@/data/queries/members";
+import { projectDetailOptions } from "@/data/queries/projects";
 import { currentSessionEpoch, sessionEpochChanged } from "@/data/session-epoch";
 import { useNewIssueDraftStore } from "@/data/stores/new-issue-draft-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
@@ -49,6 +54,43 @@ import { useMentionInput } from "@/lib/use-mention-input";
 import { useT } from "@/lib/i18n";
 
 export default function NewIssueModal() {
+  const { t } = useT("issues");
+  const { workspace, projectId } = useLocalSearchParams<{
+    workspace: string;
+    projectId?: string;
+  }>();
+  const wsId = useWorkspaceStore((state) =>
+    state.currentWorkspaceSlug === workspace ? state.currentWorkspaceId : null,
+  );
+  const project = useQuery(projectDetailOptions(wsId, projectId ?? ""));
+
+  if (!projectId) return <NewIssueForm />;
+
+  if (project.isPending) {
+    return (
+      <View className="flex-1 items-center justify-center bg-background">
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
+  if (!project.data?.id || project.data.archived_at) {
+    return (
+      <View className="flex-1 items-center justify-center gap-3 bg-background px-4">
+        <Text className="text-sm text-muted-foreground">{t("new.project_unavailable")}</Text>
+        {project.isError && (
+          <Button variant="outline" onPress={() => project.refetch()}>
+            <Text>{t("common:actions.retry")}</Text>
+          </Button>
+        )}
+      </View>
+    );
+  }
+
+  return <NewIssueForm key={projectId} initialProject={project.data} />;
+}
+
+function NewIssueForm({ initialProject = null }: { initialProject?: Project | null }) {
   const { t } = useT("issues");
   const navigation = useNavigation();
   const [agentMode, setAgentMode] = useState(false);
@@ -69,13 +111,14 @@ export default function NewIssueModal() {
   const dueDate = useNewIssueDraftStore((s) => s.dueDate);
   const project = useNewIssueDraftStore((s) => s.project);
   const resetDraft = useNewIssueDraftStore((s) => s.reset);
+  const [defaultProject] = useState(initialProject);
 
   useEffect(() => {
-    resetDraft();
+    resetDraft(defaultProject);
     return () => {
       resetDraft();
     };
-  }, [resetDraft]);
+  }, [defaultProject, resetDraft]);
 
   const createIssue = useCreateIssue();
   const quickCreate = useQuickCreateIssue();
@@ -98,7 +141,7 @@ export default function NewIssueModal() {
   const trimmedPrompt = prompt.trim();
   const agentRequest =
     agentMode && selectedAgent && trimmedPrompt && !agentListFailed && !waitingForAgents
-      ? { prompt: trimmedPrompt, agent_id: selectedAgent.id }
+      ? { prompt: trimmedPrompt, agent_id: selectedAgent.id, project_id: project?.id }
       : null;
   const canSubmit = !isSubmitting && (agentMode ? !!agentRequest : !!title.trim());
 
@@ -221,6 +264,7 @@ export default function NewIssueModal() {
                   </Text>
                 </Button>
               )}
+              <CreateFormProjectChip disabled={isSubmitting} />
               {agentPickerOpen && (
                 <AgentPickerSheet
                   visible

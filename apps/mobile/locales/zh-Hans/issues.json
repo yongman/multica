@@ -78,6 +78,7 @@
     "description_placeholder": "描述...（输入 @ 提及）",
     "manual_mode": "手动创建",
     "agent_mode": "通过智能体创建",
+    "project_unavailable": "此项目不可用。",
     "agent_prompt": "描述要创建任务的需求",
     "selected_agent": "创建者：{{name}}",
     "no_agents": "没有运行时可用的智能体。你可以手动创建任务。",

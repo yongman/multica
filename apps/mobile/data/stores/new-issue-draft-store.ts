@@ -40,7 +40,7 @@ interface NewIssueDraftState {
   setAssignee: (next: AssigneeValue) => void;
   setDueDate: (next: string | null) => void;
   setProject: (next: Project | null) => void;
-  reset: () => void;
+  reset: (project?: Project | null) => void;
 }
 
 const INITIAL: Pick<
@@ -61,7 +61,7 @@ export const useNewIssueDraftStore = create<NewIssueDraftState>((set) => ({
   setAssignee: (next) => set({ assignee: next }),
   setDueDate: (next) => set({ dueDate: next }),
   setProject: (next) => set({ project: next }),
-  reset: () => set({ ...INITIAL }),
+  reset: (project = null) => set({ ...INITIAL, project }),
 }));
 
 /**

@@ -174,6 +174,8 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024;
  *  reasonable Multica payload size on cellular. */
 const FETCH_TIMEOUT_MS = 30_000;
 
+export type QuickCreateIssueRequest = { agent_id: string; prompt: string; project_id?: string };
+
 export class ApiError extends Error {
   readonly status: number;
   readonly body?: unknown;
@@ -679,7 +681,7 @@ class ApiClient {
     });
   }
 
-  async quickCreateIssue(body: { agent_id: string; prompt: string }): Promise<void> {
+  async quickCreateIssue(body: QuickCreateIssueRequest): Promise<void> {
     await this.fetch<unknown>("/api/issues/quick-create", {
       method: "POST",
       body: JSON.stringify(body),

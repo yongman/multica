@@ -15,9 +15,10 @@ import { useT } from "@/lib/i18n";
 
 interface Props {
   projectId: string;
+  onCreateIssue?: () => void;
 }
 
-export function ProjectRelatedIssues({ projectId }: Props) {
+export function ProjectRelatedIssues({ projectId, onCreateIssue }: Props) {
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
   const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
   const { t } = useT("issues");
@@ -51,16 +52,23 @@ export function ProjectRelatedIssues({ projectId }: Props) {
     );
   }
 
-  if ((data?.length ?? 0) === 0) {
-    return (
-      <View className="px-4 py-6">
-        <Text className="text-sm text-muted-foreground">{t("list.empty")}</Text>
-      </View>
-    );
-  }
-
   return (
     <View>
+      <View className="flex-row items-center justify-between gap-3 px-4 py-3">
+        <Text className="shrink text-sm font-medium">
+          {t("projects:detail.related_issues")}
+        </Text>
+        {onCreateIssue && (
+          <Button variant="outline" size="sm" onPress={onCreateIssue}>
+            <Text>{t("navigation:routes.new_issue")}</Text>
+          </Button>
+        )}
+      </View>
+      {!data?.length && (
+        <View className="px-4 py-3">
+          <Text className="text-sm text-muted-foreground">{t("list.empty")}</Text>
+        </View>
+      )}
       {sections.map(({ status, count, expanded, data: issues }) => {
         return (
           <View key={status}>

@@ -63,14 +63,15 @@ describe("api.quickCreateIssue", () => {
 
   const request = { agent_id: "agent-1", prompt: "Add an Android smoke test" };
 
-  it("sends the selected agent and prompt without depending on the response fields", async () => {
+  it.each([undefined, "project-1"])("sends the quick-create request with project %s", async (projectId) => {
     const fetchMock = vi.fn(async () => Response.json({}, { status: 202 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(api.quickCreateIssue(request)).resolves.toBeUndefined();
+    const body = { ...request, project_id: projectId };
+    await expect(api.quickCreateIssue(body)).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
       "https://api.example.test/api/issues/quick-create",
-      expect.objectContaining({ method: "POST", body: JSON.stringify(request) }),
+      expect.objectContaining({ method: "POST", body: JSON.stringify(body) }),
     );
   });
 

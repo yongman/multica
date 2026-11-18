@@ -78,6 +78,7 @@
     "description_placeholder": "描述...（輸入 @ 提及）",
     "manual_mode": "手動建立",
     "agent_mode": "透過 AI 代理建立",
+    "project_unavailable": "此專案無法使用。",
     "agent_prompt": "描述要建立任務的需求",
     "selected_agent": "建立者：{{name}}",
     "no_agents": "沒有執行環境可用的 AI 代理。你可以手動建立任務。",
