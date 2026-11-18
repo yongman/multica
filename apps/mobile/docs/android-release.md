@@ -109,6 +109,72 @@ EXPO_ANDROID_VERSION_CODE=9 pnpm -C apps/mobile android:release
 adb install -r apps/mobile/dist/android/production/multica-0.1.6-9.apk
 ```
 
+## Publish an ARM64 APK from a Git tag
+
+The **Android APK Release** workflow builds the commit pointed to by the pushed
+tag. That commit must already be in `origin/android` history and contain
+`.github/workflows/android-apk-release.yml`, including for the first release.
+Use a new tag name. Check the repository's existing tags before choosing one
+because tags are shared across branches.
+
+The publish job makes a fast-forward push to `android` with its own
+`GITHUB_TOKEN` and `contents: write`. Enable Actions on the fork and ensure
+the repository's rules allow the Actions identity to push to `android`.
+Limit creation and updates of `v*` tags to trusted release maintainers. The
+workflow skips deletion events and checks that the tag still points to the
+same commit before publishing.
+
+### Configure release signing
+
+Set these GitHub Actions repository secrets before pushing the tag.
+
+| Secret | Value |
+| --- | --- |
+| `MULTICA_ANDROID_KEYSTORE_BASE64` | Existing JKS or PKCS#12 keystore, encoded as one line with `base64 -w0` |
+| `MULTICA_ANDROID_STORE_PASSWORD` | Keystore password |
+| `MULTICA_ANDROID_KEY_ALIAS` | Alias of the release key inside the keystore |
+| `MULTICA_ANDROID_KEY_PASSWORD` | Key password, only if it differs from the store password |
+
+Use the authorized key whose certificate matches the currently distributed
+`ai.multica.mobile` APK. Get the certificate SHA-256 from that known APK with
+`apksigner verify --print-certs <previous-release.apk>`. Confirm the selected
+keystore alias has the same fingerprint with `keytool -list -v -keystore
+<keystore> -alias <alias>`. Set the fingerprint as the Actions repository variable
+`MULTICA_ANDROID_CERT_SHA256`. The signing files and passwords are never
+included in the handoff artifact. The build writes signing files to a private
+directory in runner temporary storage and removes them on exit.
+
+### Choose and push the version
+
+For a canonical `vX.Y.Z` tag, the APK `versionName` is `X.Y.Z` and its
+`versionCode` is `1 + X × 1,000,000 + Y × 1,000 + Z`. The major component is
+0–2099 and the minor and patch components are 0–999. Leading zeroes,
+prerelease suffixes and build metadata are rejected. Choose a version greater than
+the last distributed `versionCode` for this app and signer, including manual
+releases. The workflow sets `EXPO_ANDROID_VERSION_NAME` and the existing
+`EXPO_ANDROID_VERSION_CODE` for this production build.
+
+After the workflow commit has been pushed to `android`, fetch that branch and
+tag the intended commit. For example, if `v0.1.7` is available and code 1008
+is higher than the last distributed code:
+
+```bash
+git fetch origin android
+git tag -a v0.1.7 origin/android -m 'Android APK v0.1.7'
+git push origin refs/tags/v0.1.7
+```
+
+The bot adds `android-apks/v0.1.7/multica-0.1.7-1008.apk` and its `.sha256`
+and `.json` sidecars to `android`. The JSON records the exact source commit,
+ABI, Android version and signer. Run `sha256sum -c multica-0.1.7-1008.apk.sha256`
+from that directory to check the downloaded file. GitHub limits each APK to
+100 MiB.
+
+Rerunning a published tag for the same source leaves the existing commit and
+APK in place. Reusing a published tag for a different commit fails. If a release
+attempt fails, keep the original tag and rerun it. For a source fix, push a new
+version tag. Deleting a tag leaves its published files in `android`.
+
 ## Verification
 
 Run the mobile checks in `AGENTS.md`, then build Release. Menus use `useActionSheet`

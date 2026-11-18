@@ -29,7 +29,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         ? "Multica (Staging)"
         : "Multica (Dev)",
     slug: "multica-mobile",
-    version: "0.1.6",
+    version: (isProd ? process.env.EXPO_ANDROID_VERSION_NAME : undefined) ?? "0.1.6",
     orientation: "portrait",
     userInterfaceStyle: "automatic",
     scheme: "multica",
