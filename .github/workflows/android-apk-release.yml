@@ -1,0 +1,86 @@
+name: Android APK Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.ref_type == 'tag' && !github.event.deleted
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          filter: blob:none
+          persist-credentials: false
+      - name: Check tag and publication state
+        id: plan
+        run: bash apps/mobile/scripts/android-tag-release.sh plan
+      - uses: pnpm/action-setup@v4
+        if: steps.plan.outputs.publish == 'true'
+      - uses: actions/setup-node@v6
+        if: steps.plan.outputs.publish == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@v5
+        if: steps.plan.outputs.publish == 'true'
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        if: steps.plan.outputs.publish == 'true'
+        with:
+          packages: platform-tools
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.plan.outputs.publish == 'true'
+      - name: Install dependencies and Android SDK components
+        if: steps.plan.outputs.publish == 'true'
+        run: |
+          pnpm install --frozen-lockfile --filter @multica/mobile...
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006" "cmake;3.22.1"
+      - name: Build, sign and verify the ARM64 APK
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          MULTICA_ANDROID_KEYSTORE_BASE64: ${{ secrets.MULTICA_ANDROID_KEYSTORE_BASE64 }}
+          MULTICA_ANDROID_STORE_PASSWORD: ${{ secrets.MULTICA_ANDROID_STORE_PASSWORD }}
+          MULTICA_ANDROID_KEY_ALIAS: ${{ secrets.MULTICA_ANDROID_KEY_ALIAS }}
+          MULTICA_ANDROID_KEY_PASSWORD: ${{ secrets.MULTICA_ANDROID_KEY_PASSWORD }}
+          MULTICA_ANDROID_CERT_SHA256: ${{ vars.MULTICA_ANDROID_CERT_SHA256 }}
+        run: bash apps/mobile/scripts/android-tag-release.sh build
+      - uses: actions/upload-artifact@v4
+        if: steps.plan.outputs.publish == 'true'
+        with:
+          name: android-apk
+          path: ${{ runner.temp }}/android-apk/
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 3
+
+  publish:
+    needs: build
+    if: needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          filter: blob:none
+          token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: ${{ runner.temp }}/android-apk/
+      - name: Commit the APK to android
+        run: bash apps/mobile/scripts/android-tag-release.sh publish
