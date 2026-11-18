@@ -86,6 +86,7 @@ vi.mock("react", async (importOriginal) => ({
 }));
 vi.mock("react-native", () => ({
   ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", RefreshControl: "RefreshControl", View: "View",
+  Platform: { OS: "android" },
 }));
 vi.mock("@shopify/flash-list", () => ({ FlashList: "FlashList" }));
 vi.mock("@expo/vector-icons", () => ({ Ionicons: "Ionicons" }));

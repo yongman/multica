@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IssueChildren } from "./issue-children";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   RefreshControl,
   View,
@@ -310,7 +311,9 @@ export function TimelineList({
       <IssueDescription issueId={issue.id} description={issue.description} />
       <IssueReactionRow issue={issue} />
       <IssueChildren issueId={issue.id} />
-      <View className="px-4 pt-4 pb-2 border-t border-border">
+      <View
+        className={`pt-4 pb-2 border-t border-border ${Platform.OS === "android" ? "mx-4" : "px-4"}`}
+      >
         <Text className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
           Activity
         </Text>
