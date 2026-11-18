@@ -679,6 +679,13 @@ class ApiClient {
     });
   }
 
+  async quickCreateIssue(body: { agent_id: string; prompt: string }): Promise<void> {
+    await this.fetch<unknown>("/api/issues/quick-create", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
   // Timeline returns the full ASC entry list in one shot — server-side
   // pagination was dropped in #2322 (p99 ~30 entries per issue, cursors
   // were pure overhead and split reply threads at page boundaries).

@@ -11,15 +11,42 @@
  * navigation title; the body re-renders it more prominently per the
  * reference screenshot.
  */
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
+import { useQuery } from "@tanstack/react-query";
 import type { Issue } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
+import { issueDetailOptions } from "@/data/queries/issues";
+import { useWorkspaceStore } from "@/data/workspace-store";
+import { useT } from "@/lib/i18n";
 import { AttributeRow } from "./attribute-row";
 import { AgentActivityRow } from "./agent-activity-row";
 
 export function IssueHeaderCard({ issue }: { issue: Issue }) {
+  const { t } = useT("issues");
+  const { workspace } = useLocalSearchParams<{ workspace: string }>();
+  const wsId = useWorkspaceStore((state) => state.currentWorkspaceId);
+  const parentId = issue.parent_issue_id ?? "";
+  const parent = useQuery(issueDetailOptions(wsId, parentId));
+
   return (
     <View className="px-4 pt-4 pb-3 gap-3">
+      {workspace && parentId && !parent.isError && parent.data?.id === parentId ? (
+        <Pressable
+          accessibilityRole="link"
+          className="self-start max-w-full active:opacity-60"
+          onPress={() => router.push({
+            pathname: "/[workspace]/issue/[id]",
+            params: { workspace, id: parentId },
+          })}
+        >
+          <Text className="text-sm text-primary" numberOfLines={1}>
+            {t("detail.parent_issue", { identifier: parent.data.identifier, title: parent.data.title })}
+          </Text>
+        </Pressable>
+      ) : parentId && (parent.isError || parent.isSuccess) ? (
+        <Text className="text-sm text-muted-foreground">{t("detail.parent_unavailable")}</Text>
+      ) : null}
       <Text className="text-xs text-muted-foreground">{issue.identifier}</Text>
       <Text className="text-2xl font-bold text-foreground">
         {issue.title}

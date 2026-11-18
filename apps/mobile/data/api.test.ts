@@ -58,6 +58,30 @@ describe("api.listChildIssues", () => {
   });
 });
 
+describe("api.quickCreateIssue", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const request = { agent_id: "agent-1", prompt: "Add an Android smoke test" };
+
+  it("sends the selected agent and prompt without depending on the response fields", async () => {
+    const fetchMock = vi.fn(async () => Response.json({}, { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.quickCreateIssue(request)).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      "https://api.example.test/api/issues/quick-create",
+      expect.objectContaining({ method: "POST", body: JSON.stringify(request) }),
+    );
+  });
+
+  it("preserves the server's rejection reason", async () => {
+    const body = { code: "agent_unavailable", reason: "Runtime is offline" };
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(body, { status: 422 })));
+
+    await expect(api.quickCreateIssue(request)).rejects.toMatchObject({ status: 422, body });
+  });
+});
+
 describe("api.deleteComment", () => {
   const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
 

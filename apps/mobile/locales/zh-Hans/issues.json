@@ -53,6 +53,8 @@
   },
   "detail": {
     "sub_issues": "子任务",
+    "parent_issue": "父任务：{{identifier}} · {{title}}",
+    "parent_unavailable": "父任务不可用",
     "properties": "属性",
     "activity": "动态",
     "comments": "评论",
@@ -73,7 +75,18 @@
     "title_placeholder": "任务标题",
     "create": "创建任务",
     "creating": "创建中...",
-    "description_placeholder": "描述...（输入 @ 提及）"
+    "description_placeholder": "描述...（输入 @ 提及）",
+    "manual_mode": "手动创建",
+    "agent_mode": "通过智能体创建",
+    "agent_prompt": "描述要创建任务的需求",
+    "selected_agent": "创建者：{{name}}",
+    "no_agents": "没有运行时可用的智能体。你可以手动创建任务。",
+    "agents_load_failed": "无法加载智能体。",
+    "agent_send": "发送给智能体",
+    "agent_send_failed": "无法发送给智能体",
+    "agent_upgrade": "请升级该智能体的运行时，或选择其他智能体。",
+    "agent_sent": "请求已发送",
+    "agent_inbox": "请在收件箱查看结果。"
   },
   "edit": {
     "title": "编辑任务",

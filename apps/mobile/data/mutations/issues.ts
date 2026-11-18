@@ -703,6 +703,13 @@ export function useCreateIssue() {
   });
 }
 
+export function useQuickCreateIssue() {
+  return useSessionMutation({
+    mutationFn: (body: { agent_id: string; prompt: string }) => api.quickCreateIssue(body),
+    networkMode: "always",
+  });
+}
+
 /**
  * Keep the issue visible until the server confirms deletion. A rejected delete
  * leaves list, detail, timeline and run caches intact for retry.

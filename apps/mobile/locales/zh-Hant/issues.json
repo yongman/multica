@@ -53,6 +53,8 @@
   },
   "detail": {
     "sub_issues": "子任務",
+    "parent_issue": "父任務：{{identifier}} · {{title}}",
+    "parent_unavailable": "父任務無法存取",
     "properties": "屬性",
     "activity": "動態",
     "comments": "評論",
@@ -73,7 +75,18 @@
     "title_placeholder": "任務標題",
     "create": "建立任務",
     "creating": "建立中...",
-    "description_placeholder": "描述...（輸入 @ 提及）"
+    "description_placeholder": "描述...（輸入 @ 提及）",
+    "manual_mode": "手動建立",
+    "agent_mode": "透過 AI 代理建立",
+    "agent_prompt": "描述要建立任務的需求",
+    "selected_agent": "建立者：{{name}}",
+    "no_agents": "沒有執行環境可用的 AI 代理。你可以手動建立任務。",
+    "agents_load_failed": "無法載入 AI 代理。",
+    "agent_send": "傳送給 AI 代理",
+    "agent_send_failed": "無法傳送給 AI 代理",
+    "agent_upgrade": "請更新該 AI 代理的執行環境，或選擇其他 AI 代理。",
+    "agent_sent": "請求已傳送",
+    "agent_inbox": "請在收件匣查看結果。"
   },
   "edit": {
     "title": "編輯任務",

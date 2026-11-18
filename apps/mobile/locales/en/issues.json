@@ -53,6 +53,8 @@
   },
   "detail": {
     "sub_issues": "Sub-issues",
+    "parent_issue": "Parent issue: {{identifier}} · {{title}}",
+    "parent_unavailable": "Parent issue unavailable",
     "properties": "Properties",
     "activity": "Activity",
     "comments": "Comments",
@@ -73,7 +75,18 @@
     "title_placeholder": "Issue title",
     "create": "Create issue",
     "creating": "Creating...",
-    "description_placeholder": "Description... (type @ to mention)"
+    "description_placeholder": "Description... (type @ to mention)",
+    "manual_mode": "Create manually",
+    "agent_mode": "Create with agent",
+    "agent_prompt": "Describe the work to create an issue for",
+    "selected_agent": "Created by: {{name}}",
+    "no_agents": "No agents with an available runtime. You can create the issue manually.",
+    "agents_load_failed": "Couldn’t load agents.",
+    "agent_send": "Send to agent",
+    "agent_send_failed": "Couldn’t send to agent",
+    "agent_upgrade": "Update the agent’s runtime or choose another agent.",
+    "agent_sent": "Request sent",
+    "agent_inbox": "Check your inbox for the result."
   },
   "edit": {
     "title": "Edit issue",

@@ -14,16 +14,18 @@ interface Props {
   disabled: boolean;
   onPress: () => void;
   loading?: boolean;
+  accessibilityLabel?: string;
 }
 
-export function SubmitIssueButton({ disabled, onPress, loading }: Props) {
+export function SubmitIssueButton({ disabled, onPress, loading, accessibilityLabel }: Props) {
   const { t } = useT("issues");
   const interactive = !disabled && !loading;
   return (
     <Pressable
       onPress={interactive ? onPress : undefined}
       hitSlop={8}
-      accessibilityLabel={t("new.create")}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? t("new.create")}
       accessibilityState={{ disabled: !interactive, busy: loading }}
       className={cn(interactive && "active:opacity-60")}
     >
