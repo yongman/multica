@@ -6,6 +6,7 @@ import { issueKeys } from "@/data/queries/issue-keys";
 import {
   addCommentReaction,
   addIssueReaction,
+  applyIssueCreated,
   commentToTimelineEntry,
   onIssueAuxiliaryRevision,
   invalidateIssueAfterReconnect,
@@ -15,6 +16,29 @@ import {
   removeIssueReaction,
   replaceCommentTimelineEntry,
 } from "./issue-ws-updaters";
+
+describe("applyIssueCreated", () => {
+  it.each(["project-b", null])("invalidates only the destination project list for %s", (projectId) => {
+    const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 60_000 } } });
+    const wsId = "workspace-1";
+    const workspaceList = issueKeys.list(wsId);
+    const sourceList = issueKeys.projectList(wsId, "project-a");
+    const targetList = issueKeys.projectList(wsId, "project-b");
+    const otherWorkspaceList = issueKeys.projectList("workspace-2", "project-b");
+    for (const key of [workspaceList, sourceList, targetList, otherWorkspaceList]) {
+      qc.setQueryData(key, []);
+    }
+    const issue = { id: "issue-1", project_id: projectId } as Issue;
+
+    applyIssueCreated(qc, wsId, issue);
+
+    expect(qc.getQueryData(workspaceList)).toEqual([issue]);
+    expect(qc.getQueryState(workspaceList)?.isInvalidated).toBe(false);
+    expect(qc.getQueryState(sourceList)?.isInvalidated).toBe(false);
+    expect(qc.getQueryState(targetList)?.isInvalidated).toBe(projectId !== null);
+    expect(qc.getQueryState(otherWorkspaceList)?.isInvalidated).toBe(false);
+  });
+});
 
 describe("invalidateIssueAfterReconnect", () => {
   it("invalidates attachments together with the issue and task caches", () => {

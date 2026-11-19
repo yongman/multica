@@ -69,7 +69,7 @@ export default function ProjectDetail() {
       detail.refetch(),
       qc.invalidateQueries({ queryKey: projectResourcesOptions(wsId, id).queryKey }),
       qc.invalidateQueries({
-        queryKey: [...issueKeys.list(wsId), "byProject", id],
+        queryKey: issueKeys.projectList(wsId, id),
       }),
     ]);
   }, [detail, qc, wsId, id]);
@@ -94,6 +94,13 @@ export default function ProjectDetail() {
   const createPin = useCreatePin();
   const deletePin = useDeletePin();
   const { t } = useT("projects");
+
+  const onCreateIssue = wsSlug && project && !project.archived_at
+    ? () => router.push({
+        pathname: "/[workspace]/new-issue",
+        params: { workspace: wsSlug, projectId: project.id },
+      })
+    : undefined;
 
   const onPressMore = () => {
     if (!project) return;
@@ -252,7 +259,7 @@ export default function ProjectDetail() {
             }}
           />
           <View className="h-3" />
-          <ProjectRelatedIssues projectId={id} />
+          <ProjectRelatedIssues projectId={id} onCreateIssue={onCreateIssue} />
         </ScrollView>
       )}
     </SafeAreaView>

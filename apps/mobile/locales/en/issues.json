@@ -78,6 +78,7 @@
     "description_placeholder": "Description... (type @ to mention)",
     "manual_mode": "Create manually",
     "agent_mode": "Create with agent",
+    "project_unavailable": "This project is unavailable.",
     "agent_prompt": "Describe the work to create an issue for",
     "selected_agent": "Created by: {{name}}",
     "no_agents": "No agents with an available runtime. You can create the issue manually.",

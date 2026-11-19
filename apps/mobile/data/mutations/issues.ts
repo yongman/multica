@@ -30,7 +30,7 @@ import {
   applyCommentDeletion,
   removeCommentSubtree,
 } from "@multica/core/issues/comment-deletion";
-import { api } from "@/data/api";
+import { api, type QuickCreateIssueRequest } from "@/data/api";
 import { isBuiltInIssueStatus, statusCategoryOfKey } from "@/lib/issue-status";
 import { appConfigOptions } from "@/data/queries/billing";
 import { issueKeys } from "@/data/queries/issues";
@@ -686,6 +686,7 @@ export function useDetachLabel(issueId: string) {
  * Invalidation is simpler and the hosted server returns in <300ms.
  *
  * Invalidates:
+ *  - project issue list when a project was selected
  *  - issueKeys.myAll(wsId)        my-issues list (all three scopes)
  *  - inboxKeys.all(wsId)          inbox (assignment notification if any) —
  *                                 prefix-matches the inbox list key
@@ -696,7 +697,10 @@ export function useCreateIssue() {
 
   return useSessionMutation({
     mutationFn: (body: CreateIssueRequest) => api.createIssue(body),
-    onSuccess: () => {
+    onSuccess: (_issue, { project_id }) => {
+      if (project_id) {
+        qc.invalidateQueries({ queryKey: issueKeys.projectList(wsId, project_id), exact: true });
+      }
       qc.invalidateQueries({ queryKey: issueKeys.myAll(wsId) });
       qc.invalidateQueries({ queryKey: inboxKeys.all(wsId) });
     },
@@ -705,7 +709,7 @@ export function useCreateIssue() {
 
 export function useQuickCreateIssue() {
   return useSessionMutation({
-    mutationFn: (body: { agent_id: string; prompt: string }) => api.quickCreateIssue(body),
+    mutationFn: (body: QuickCreateIssueRequest) => api.quickCreateIssue(body),
     networkMode: "always",
   });
 }

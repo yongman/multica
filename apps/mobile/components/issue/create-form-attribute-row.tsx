@@ -10,7 +10,7 @@
  * the Stack — they can't reach into the new-issue screen's local state.
  * The draft store is the cross-screen channel.
  */
-import { View } from "react-native";
+import { Keyboard, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { AttributeChip } from "@/components/issue/attribute-chip";
@@ -35,14 +35,12 @@ type NewIssuePickerField =
   | "status"
   | "priority"
   | "assignee"
-  | "project"
   | "due-date";
 
 const NEW_ISSUE_PICKER_PATHNAMES = {
   status: "/[workspace]/new-issue-picker/status",
   priority: "/[workspace]/new-issue-picker/priority",
   assignee: "/[workspace]/new-issue-picker/assignee",
-  project: "/[workspace]/new-issue-picker/project",
   "due-date": "/[workspace]/new-issue-picker/due-date",
 } as const satisfies Record<NewIssuePickerField, string>;
 
@@ -53,7 +51,6 @@ export function CreateFormAttributeRow() {
   const priority = useNewIssueDraftStore((s) => s.priority);
   const assignee = useNewIssueDraftStore((s) => s.assignee);
   const dueDate = useNewIssueDraftStore((s) => s.dueDate);
-  const project = useNewIssueDraftStore((s) => s.project);
 
   const { getName } = useActorLookup();
   // The draft can hold a custom status the user picked in the sheet. (MUL-6243)
@@ -131,20 +128,40 @@ export function CreateFormAttributeRow() {
           variant={dueDate ? "filled" : "dimmed"}
           onPress={() => open("due-date")}
         />
-        <AttributeChip
-          icon={
-            project ? (
-              <ProjectIcon icon={project.icon} size="sm" />
-            ) : (
-              <Ionicons name="folder-outline" size={14} color="#a1a1aa" />
-            )
-          }
-          label={project?.title ?? t("common:fields.project")}
-          variant={project ? "filled" : "dimmed"}
-          onPress={() => open("project")}
-        />
+        <CreateFormProjectChip />
       </View>
     </View>
+  );
+}
+
+export function CreateFormProjectChip({ disabled = false }: { disabled?: boolean }) {
+  const { t } = useT("issues");
+  const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
+  const project = useNewIssueDraftStore((s) => s.project);
+
+  const open = () => {
+    if (!wsSlug) return;
+    Keyboard.dismiss();
+    router.push({
+      pathname: "/[workspace]/new-issue-picker/project",
+      params: { workspace: wsSlug },
+    });
+  };
+
+  return (
+    <AttributeChip
+      className="self-start max-w-full"
+      icon={
+        project ? (
+          <ProjectIcon icon={project.icon} size="sm" />
+        ) : (
+          <Ionicons name="folder-outline" size={14} color="#a1a1aa" />
+        )
+      }
+      label={project?.title ?? t("common:fields.project")}
+      variant={project ? "filled" : "dimmed"}
+      onPress={disabled ? undefined : open}
+    />
   );
 }
 

@@ -25,12 +25,16 @@ import {
   View,
 } from "react-native";
 import { KeyboardAvoidingView } from "@/components/ui/keyboard-avoiding-view";
-import { Stack, router, useNavigation } from "expo-router";
+import { Stack, router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
+import type { Project } from "@multica/core/types";
 import { canAssignAgentToIssue } from "@multica/core/permissions/rules";
 import { AgentPickerSheet } from "@/components/chat/agent-picker-sheet";
 import { SubmitIssueButton } from "@/components/issue/submit-issue-button";
-import { CreateFormAttributeRow } from "@/components/issue/create-form-attribute-row";
+import {
+  CreateFormAttributeRow,
+  CreateFormProjectChip,
+} from "@/components/issue/create-form-attribute-row";
 import { MentionSuggestionBar } from "@/components/issue/mention-suggestion-bar";
 import { DescriptionField } from "@/components/issue/description-field";
 import { Button } from "@/components/ui/button";
@@ -41,6 +45,7 @@ import { useAuthStore } from "@/data/auth-store";
 import { useCreateIssue, useQuickCreateIssue } from "@/data/mutations/issues";
 import { agentListOptions } from "@/data/queries/agents";
 import { memberListOptions } from "@/data/queries/members";
+import { findProject, projectDetailOptions, projectListOptions } from "@/data/queries/projects";
 import { currentSessionEpoch, sessionEpochChanged } from "@/data/session-epoch";
 import { useNewIssueDraftStore } from "@/data/stores/new-issue-draft-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
@@ -49,6 +54,51 @@ import { useMentionInput } from "@/lib/use-mention-input";
 import { useT } from "@/lib/i18n";
 
 export default function NewIssueModal() {
+  const { t } = useT("issues");
+  const { workspace, projectId } = useLocalSearchParams<{
+    workspace: string;
+    projectId?: string;
+  }>();
+  const wsId = useWorkspaceStore((state) =>
+    state.currentWorkspaceSlug === workspace ? state.currentWorkspaceId : null,
+  );
+  const [initialProject, setInitialProject] = useState<Project | null>(null);
+  const sourceOptions = projectDetailOptions(wsId, projectId ?? "");
+  const source = useQuery({
+    ...sourceOptions,
+    enabled: sourceOptions.enabled && !initialProject,
+  });
+
+  if (!projectId || initialProject) {
+    return <NewIssueForm initialProject={initialProject} />;
+  }
+
+  if (source.data?.id && !source.data.archived_at) {
+    setInitialProject(source.data);
+    return null;
+  }
+
+  if (source.isPending) {
+    return (
+      <View className="flex-1 items-center justify-center bg-background">
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
+  return (
+    <View className="flex-1 items-center justify-center gap-3 bg-background px-4">
+      <Text className="text-sm text-muted-foreground">{t("new.project_unavailable")}</Text>
+      {source.isError && (
+        <Button variant="outline" onPress={() => source.refetch()}>
+          <Text>{t("common:actions.retry")}</Text>
+        </Button>
+      )}
+    </View>
+  );
+}
+
+function NewIssueForm({ initialProject }: { initialProject: Project | null }) {
   const { t } = useT("issues");
   const navigation = useNavigation();
   const [agentMode, setAgentMode] = useState(false);
@@ -71,16 +121,23 @@ export default function NewIssueModal() {
   const resetDraft = useNewIssueDraftStore((s) => s.reset);
 
   useEffect(() => {
-    resetDraft();
+    resetDraft(initialProject);
     return () => {
       resetDraft();
     };
-  }, [resetDraft]);
+  }, [initialProject, resetDraft]);
 
   const createIssue = useCreateIssue();
   const quickCreate = useQuickCreateIssue();
   const isSubmitting = createIssue.isPending || quickCreate.isPending;
   const wsId = useWorkspaceStore((state) => state.currentWorkspaceId);
+  const projectId = project?.id ?? null;
+  const { data: projects } = useQuery({
+    ...projectListOptions(wsId),
+    enabled: !!wsId && !!projectId,
+  });
+  const selectedProject = projects ? findProject(projects, projectId) : project;
+  const projectUnavailable = !!projectId && (!selectedProject || !!selectedProject.archived_at);
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const agents = useQuery({ ...agentListOptions(wsId), enabled: !!wsId && agentMode });
   const members = useQuery({ ...memberListOptions(wsId), enabled: !!wsId && agentMode });
@@ -98,9 +155,9 @@ export default function NewIssueModal() {
   const trimmedPrompt = prompt.trim();
   const agentRequest =
     agentMode && selectedAgent && trimmedPrompt && !agentListFailed && !waitingForAgents
-      ? { prompt: trimmedPrompt, agent_id: selectedAgent.id }
+      ? { prompt: trimmedPrompt, agent_id: selectedAgent.id, project_id: projectId ?? undefined }
       : null;
-  const canSubmit = !isSubmitting && (agentMode ? !!agentRequest : !!title.trim());
+  const canSubmit = !isSubmitting && !projectUnavailable && (agentMode ? !!agentRequest : !!title.trim());
 
   async function onSubmit() {
     if (!canSubmit || submitting.current) return;
@@ -119,7 +176,7 @@ export default function NewIssueModal() {
             ? { assignee_type: assignee.type, assignee_id: assignee.id }
             : {}),
           ...(dueDate ? { due_date: dueDate } : {}),
-          ...(project ? { project_id: project.id } : {}),
+          ...(projectId ? { project_id: projectId } : {}),
         });
       }
       if (!sessionEpochChanged(epoch) && navigation.isFocused()) {
@@ -221,6 +278,7 @@ export default function NewIssueModal() {
                   </Text>
                 </Button>
               )}
+              <CreateFormProjectChip disabled={isSubmitting} />
               {agentPickerOpen && (
                 <AgentPickerSheet
                   visible
@@ -249,6 +307,9 @@ export default function NewIssueModal() {
               />
               <CreateFormAttributeRow />
             </>
+          )}
+          {projectUnavailable && (
+            <Text className="text-sm text-destructive">{t("new.project_unavailable")}</Text>
           )}
         </ScrollView>
 

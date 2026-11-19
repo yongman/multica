@@ -3,10 +3,8 @@
  * (workspace-session-lifetime) alongside `useMyIssuesRealtime` so the
  * workspace-wide list stays fresh regardless of which tab is foregrounded.
  *
- * issue:created     — payload includes the full Issue object; prepend in
- *                     place. Avoids a refetch and keeps UI snappy when
- *                     someone else creates an issue while we're looking
- *                     at the list.
+ * issue:created     — prepend to the workspace list and invalidate the
+ *                     target project list for server-defined ordering.
  * issue:updated     — patch in-place; client-side filter/grouping
  *                     re-derives on the next render.
  * issue:deleted     — strip from the list.
@@ -27,8 +25,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { issueKeys } from "@/data/queries/issue-keys";
 import { useWSSubscriptions } from "@/lib/use-ws-subscriptions";
 import {
+  applyIssueCreated,
   patchIssuesList,
-  prependToIssuesList,
   removeFromIssuesList,
 } from "./issue-ws-updaters";
 
@@ -42,7 +40,7 @@ export function useIssuesRealtime() {
 
       return [
         ws.on("issue:created", (payload) => {
-          prependToIssuesList(qc, wsId, payload.issue);
+          applyIssueCreated(qc, wsId, payload.issue);
         }),
         ws.on("issue:updated", (payload) => {
           patchIssuesList(qc, wsId, payload.issue);
