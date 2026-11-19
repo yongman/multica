@@ -45,6 +45,7 @@ vi.mock("@/data/api", () => ({
     deleteComment: vi.fn(async () => undefined),
     cancelTaskById: vi.fn(async () => undefined),
     deleteIssue: vi.fn(async () => undefined),
+    getIssue: vi.fn(),
     updateIssue: vi.fn(),
   },
 }));
@@ -52,9 +53,11 @@ vi.mock("@/data/api", () => ({
 vi.mock("@/data/auth-store", () => ({ useAuthStore: vi.fn() }));
 
 vi.mock("@/data/workspace-store", () => ({
-  useWorkspaceStore: (
+  useWorkspaceStore: Object.assign((
     selector: (s: { currentWorkspaceId: string }) => unknown,
-  ) => selector({ currentWorkspaceId: state.wsId }),
+  ) => selector({ currentWorkspaceId: state.wsId }), {
+    getState: () => ({ currentWorkspaceId: state.wsId }),
+  }),
 }));
 
 const wsId = "workspace-1";
@@ -77,15 +80,34 @@ it("refreshes issue lists and inbox projections after completing an issue", asyn
   for (const key of listKeys) {
     state.qc.setQueryData(key, []);
   }
+  vi.mocked(api.getIssue).mockResolvedValueOnce(previous);
   vi.mocked(api.updateIssue).mockResolvedValueOnce(completed);
 
-  await useUpdateIssue(issueId).mutateAsync({ status: "done" });
+  await useUpdateIssue(issueId, { requireOpen: true }).mutateAsync({ status: "done" });
 
-  expect(api.updateIssue).toHaveBeenCalledExactlyOnceWith(issueId, { status: "done" });
+  expect(api.getIssue).toHaveBeenCalledExactlyOnceWith(issueId);
+  expect(api.updateIssue).toHaveBeenCalledExactlyOnceWith(issueId, {
+    status: "done", expected_revision: 1,
+  });
   expect(state.qc.getQueryData(detailKey)).toEqual(completed);
   for (const key of listKeys) {
     expect(state.qc.getQueryState(key)?.isInvalidated).toBe(true);
   }
+});
+
+it("does not update a task closed after the completion sheet opened", async () => {
+  state.qc = new QueryClient();
+  vi.mocked(api.updateIssue).mockClear();
+  const detailKey = issueKeys.detail(wsId, issueId);
+  const prior = { id: issueId, status: "todo", revision: 1 } as Issue;
+  const closed = { ...prior, status: "shipped", status_category: "done", revision: 2 } as Issue;
+  state.qc.setQueryData(detailKey, prior);
+  vi.mocked(api.getIssue).mockResolvedValueOnce(closed);
+
+  await useUpdateIssue(issueId, { requireOpen: true }).mutateAsync({ status: "done" });
+
+  expect(api.updateIssue).not.toHaveBeenCalled();
+  expect(state.qc.getQueryData(detailKey)).toEqual(closed);
 });
 
 function comment(id: string, parentId: string | null = null): TimelineEntry {

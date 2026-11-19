@@ -18,6 +18,7 @@ import { StatusIcon } from "@/components/ui/status-icon";
 import { InboxDetailLabel } from "@/components/inbox/detail-label";
 import { useCompleteIssueAction } from "@/components/issue/use-complete-issue-action";
 import { getInboxDisplayTitle } from "@/lib/inbox-display";
+import { issueStatusCategory } from "@/lib/issue-status";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
@@ -29,10 +30,13 @@ interface Props {
 
 export function InboxRow({ item, onPress }: Props) {
   const isUnread = !item.read;
-  const { categoryOf, colorOf, iconOf } = useIssueStatuses();
+  const { categoryOf, colorOf, iconOf, entryOf } = useIssueStatuses();
   const onLongPress = useCompleteIssueAction(
     item.issue_id,
-    item.issue_status ? categoryOf(item.issue_status) : null,
+    item.issue_status ? issueStatusCategory({
+      status: item.issue_status,
+      status_category: entryOf(item.issue_status)?.category,
+    }) : null,
   );
   const displayTitle = getInboxDisplayTitle(item);
   const actorType = item.actor_type ?? item.recipient_type;

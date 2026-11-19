@@ -31,9 +31,10 @@ import {
   removeCommentSubtree,
 } from "@multica/core/issues/comment-deletion";
 import { api, type QuickCreateIssueRequest } from "@/data/api";
-import { isBuiltInIssueStatus, statusCategoryOfKey } from "@/lib/issue-status";
+import { isBuiltInIssueStatus, isOpenIssueCategory, issueStatusCategory, statusCategoryOfKey } from "@/lib/issue-status";
 import { appConfigOptions } from "@/data/queries/billing";
 import { issueKeys } from "@/data/queries/issues";
+import { issueStatusListOptions } from "@/data/queries/issue-statuses";
 import { inboxKeys } from "@/data/queries/inbox";
 import { useAuthStore } from "@/data/auth-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
@@ -537,14 +538,34 @@ function statusCategoryPatch(status: IssueStatus | undefined): Partial<Issue> {
  * web's `patchIssueInBuckets` rebalancing — settling via `invalidate` is
  * cheaper and produces the same end state.
  */
-export function useUpdateIssue(issueId: string) {
+export function useUpdateIssue(issueId: string, { requireOpen = false } = {}) {
   const qc = useQueryClient();
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
 
   return useSessionMutation({
     mutationKey: ["updateIssue", issueId] as const,
-    mutationFn: (patch: UpdateIssueRequest) => api.updateIssue(issueId, patch),
+    mutationFn: async (patch: UpdateIssueRequest, session) => {
+      if (!requireOpen) return api.updateIssue(issueId, patch);
+      if (useWorkspaceStore.getState().currentWorkspaceId !== wsId) {
+        throw new Error("Workspace changed");
+      }
+      const current = await api.getIssue(issueId);
+      session.assertCurrentSession();
+      if (useWorkspaceStore.getState().currentWorkspaceId !== wsId) {
+        throw new Error("Workspace changed");
+      }
+      if (current.id !== issueId) throw new Error("Issue is unavailable");
+
+      const category = issueStatusCategory(current) ?? issueStatusCategory({
+        status: current.status,
+        status_category: qc.getQueryData(issueStatusListOptions(wsId).queryKey)
+          ?.find((entry) => entry.key === current.status)?.category,
+      });
+      if (!isOpenIssueCategory(category)) return current;
+      return api.updateIssue(issueId, { ...patch, expected_revision: current.revision });
+    },
     onMutate: async (patch, session) => {
+      if (requireOpen) return;
       const key = issueKeys.detail(wsId, issueId);
       await qc.cancelQueries({ queryKey: key });
       session.assertCurrentSession();

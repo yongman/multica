@@ -33,6 +33,7 @@ export default defineConfig({
       "data/**/*.test.ts",
       "components/issue/run-cancel-button.test.ts",
       "components/inbox/inbox-screen.test.ts",
+      "components/inbox/inbox-row.test.ts",
       "components/issue/timeline-list.test.ts",
       "components/composer/message-composer.test.ts",
     ],
