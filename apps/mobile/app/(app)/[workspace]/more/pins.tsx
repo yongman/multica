@@ -158,6 +158,7 @@ function IssuePinRow({
   return (
     <IssueRow
       issue={issue}
+      allowCompletion
       showStatus
       onPress={() => {
         if (wsSlug) router.push(`/${wsSlug}/issue/${issue.id}`);

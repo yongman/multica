@@ -38,6 +38,7 @@ import { inboxKeys } from "@/data/queries/inbox";
 import { useAuthStore } from "@/data/auth-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { useFailedCommentsStore } from "@/data/stores/failed-comments-store";
+import { refreshInboxList, refreshInboxUnreadSummary } from "@/data/realtime/inbox-ws-updaters";
 import {
   commentContentFromTimeline,
   shouldAcceptServerRevision,
@@ -569,7 +570,7 @@ export function useUpdateIssue(issueId: string) {
         qc.setQueryData(ctx.key, ctx.prev);
       }
     },
-    onSuccess: (server) => {
+    onSuccess: (server, patch) => {
       qc.setQueryData<Issue>(issueKeys.detail(wsId, issueId), (current) =>
         !current || shouldAcceptServerRevision(current.revision, server.revision)
           ? server
@@ -582,6 +583,10 @@ export function useUpdateIssue(issueId: string) {
           issueId,
           server.revision,
         );
+        if (patch.status === "done") {
+          void refreshInboxList(qc, wsId);
+          void refreshInboxUnreadSummary(qc);
+        }
       }
     },
     onSettled: () => {

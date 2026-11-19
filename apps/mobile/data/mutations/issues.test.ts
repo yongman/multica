@@ -7,8 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "@/data/api";
 import { appConfigOptions } from "@/data/queries/billing";
+import { inboxKeys } from "@/data/queries/inbox";
 import { issueKeys } from "@/data/queries/issue-keys";
-import { useCancelTask, useDeleteComment, useDeleteIssue } from "./issues";
+import { useCancelTask, useDeleteComment, useDeleteIssue, useUpdateIssue } from "./issues";
 
 const state = vi.hoisted(() => ({
   qc: undefined as unknown as QueryClient,
@@ -44,6 +45,7 @@ vi.mock("@/data/api", () => ({
     deleteComment: vi.fn(async () => undefined),
     cancelTaskById: vi.fn(async () => undefined),
     deleteIssue: vi.fn(async () => undefined),
+    updateIssue: vi.fn(),
   },
 }));
 
@@ -58,6 +60,33 @@ vi.mock("@/data/workspace-store", () => ({
 const wsId = "workspace-1";
 const issueId = "issue-1";
 const timelineKey = issueKeys.timeline(wsId, issueId);
+
+it("refreshes issue lists and inbox projections after completing an issue", async () => {
+  state.qc = new QueryClient();
+  const previous = { id: issueId, status: "todo", revision: 1 } as Issue;
+  const completed = { ...previous, status: "done", revision: 2 } as Issue;
+  const detailKey = issueKeys.detail(wsId, issueId);
+  const listKeys = [
+    issueKeys.list(wsId),
+    issueKeys.myList(wsId, "assigned", {}),
+    issueKeys.projectList(wsId, "project-1"),
+    inboxKeys.list(wsId),
+    inboxKeys.unreadSummary(),
+  ];
+  state.qc.setQueryData(detailKey, previous);
+  for (const key of listKeys) {
+    state.qc.setQueryData(key, []);
+  }
+  vi.mocked(api.updateIssue).mockResolvedValueOnce(completed);
+
+  await useUpdateIssue(issueId).mutateAsync({ status: "done" });
+
+  expect(api.updateIssue).toHaveBeenCalledExactlyOnceWith(issueId, { status: "done" });
+  expect(state.qc.getQueryData(detailKey)).toEqual(completed);
+  for (const key of listKeys) {
+    expect(state.qc.getQueryState(key)?.isInvalidated).toBe(true);
+  }
+});
 
 function comment(id: string, parentId: string | null = null): TimelineEntry {
   return {

@@ -37,25 +37,38 @@ import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { PriorityIcon } from "@/components/ui/priority-icon";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { CustomStatusChip } from "@/components/issue/custom-status-chip";
-import { issueColumnCategory } from "@/lib/issue-status";
+import { useCompleteIssueAction } from "@/components/issue/use-complete-issue-action";
+import { issueColumnCategory, issueStatusCategory } from "@/lib/issue-status";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 
 interface Props {
   issue: Issue;
   onPress: () => void;
+  allowCompletion?: boolean;
   /** Render the status icon inline at the start of the row. Default: false. */
   showStatus?: boolean;
   /** Include a readable status below the title on mixed-status child lists. */
   showStatusLabel?: boolean;
 }
 
-export function IssueRow({ issue, onPress, showStatus = false, showStatusLabel = false }: Props) {
+export function IssueRow({
+  issue,
+  onPress,
+  allowCompletion = false,
+  showStatus = false,
+  showStatusLabel = false,
+}: Props) {
   // One catalog read for both the icon's colour and the chip — see the
   // divergence note in `custom-status-chip.tsx`.
   const catalog = useIssueStatuses();
+  const onLongPress = useCompleteIssueAction(
+    allowCompletion ? issue.id : null,
+    issueStatusCategory(issue),
+  );
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
       accessibilityRole="button"
       accessibilityLabel={`${issue.identifier}, ${issue.title}, ${catalog.labelOf(issue.status)}`}
       className="active:bg-secondary px-4 py-3"

@@ -82,6 +82,7 @@ export function ProjectRelatedIssues({ projectId, onCreateIssue }: Props) {
               <IssueRow
                 key={issue.id}
                 issue={issue}
+                allowCompletion
                 onPress={() => navigateToIssue(issue.id)}
               />
             ))}
