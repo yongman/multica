@@ -18,14 +18,13 @@ patch=${BASH_REMATCH[3]}
 version=${tag#v}
 version_code=$((1 + major * 1000000 + minor * 1000 + patch))
 apk="multica-${version}-${version_code}.apk"
-release_path="android-apks/$tag"
 source_commit=$(git rev-parse --verify "${GITHUB_SHA}^{commit}")
 [[ "$(git rev-parse HEAD)" == "$source_commit" ]] || fail "checkout differs from the event SHA"
 
 android_ref=refs/remotes/origin/android
 tag_ref=refs/android-apk-release/tag
 
-refresh_refs() {
+validate_release_ref() {
   local fetch_options=()
   if [[ "$(git rev-parse --is-shallow-repository)" == true ]]; then
     fetch_options+=(--unshallow)
@@ -35,8 +34,7 @@ refresh_refs() {
     fail "could not fetch android and $tag (the tag may have been deleted)"
   [[ "$(git rev-parse --verify "$tag_ref^{commit}")" == "$source_commit" ]] ||
     fail "$tag no longer points to the event commit"
-  android_tip=$(git rev-parse --verify "$android_ref")
-  git merge-base --is-ancestor "$source_commit" "$android_tip" ||
+  git merge-base --is-ancestor "$source_commit" "$android_ref" ||
     fail "$tag is not in android history"
 }
 
@@ -49,21 +47,6 @@ valid_metadata() {
   ' >/dev/null
 }
 
-already_published() {
-  local entry metadata
-  entry=$(git ls-tree "$android_tip" -- "$release_path")
-  [[ -n "$entry" ]] || return 1
-  metadata=$(git show "$android_tip:$release_path/$apk.json") ||
-    fail "incomplete publication at $release_path"
-  valid_metadata <<<"$metadata" ||
-    fail "publication at $release_path belongs to a different source or has invalid metadata"
-  if [[ -z "$(git ls-tree "$android_tip" -- "$release_path/$apk")" ||
-        "$(git show "$android_tip:$release_path/$apk.sha256")" != "$(jq -r .sha256 <<<"$metadata")  $apk" ]]; then
-    fail "incomplete publication at $release_path"
-  fi
-  printf '%s already published from %s\n' "$tag" "$source_commit"
-}
-
 check_payload() (
   cd "$1"
   valid_metadata <"$apk.json" || fail "APK metadata does not match the release"
@@ -71,7 +54,6 @@ check_payload() (
   checksum=$(sha256sum -- "$apk")
   [[ "$checksum" == "$(cat "$apk.sha256")" &&
      "${checksum%% *}" == "$(jq -r .sha256 "$apk.json")" ]] || fail "APK SHA-256 mismatch"
-  (( $(stat -c %s "$apk") <= 100 * 1024 * 1024 )) || fail "APK exceeds GitHub's 100 MiB file limit"
 )
 
 build_apk() (
@@ -124,49 +106,8 @@ build_apk() (
   cp -- "$output/$apk" "$output/$apk.json" "$output/$apk.sha256" "$RUNNER_TEMP/android-apk/"
 )
 
-publish_apk() (
-  local payload="${RUNNER_TEMP:?}/android-apk"
-  local index_dir attempt filename blob tree commit previous_tip=
-  check_payload "$payload"
-  index_dir=$(mktemp -d "$RUNNER_TEMP/android-publish.XXXXXXXX")
-  trap 'rm -rf -- "$index_dir"' EXIT
-  export GIT_INDEX_FILE="$index_dir/index"
-  for attempt in {1..5}; do
-    refresh_refs
-    if already_published; then
-      exit 0
-    fi
-    [[ "$android_tip" != "$previous_tip" ]] || fail "push failed without an android branch update"
-    git read-tree "$android_tip"
-    for filename in "$apk" "$apk.json" "$apk.sha256"; do
-      blob=$(git hash-object -w --no-filters -- "$payload/$filename")
-      git update-index --add --cacheinfo "100644,$blob,$release_path/$filename"
-    done
-    tree=$(git write-tree)
-    commit=$(git -c user.name='github-actions[bot]' \
-      -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-      commit-tree "$tree" -p "$android_tip" -m "chore(android): publish APK for $tag")
-    if git push origin "$commit:refs/heads/android"; then
-      printf 'Published %s/%s\n' "$release_path" "$apk"
-      exit 0
-    fi
-    previous_tip=$android_tip
-    printf 'Android push rejected on attempt %s. Checking remote state.\n' "$attempt" >&2
-  done
-  refresh_refs
-  already_published || fail "could not publish after concurrent android branch updates"
-)
-
 case "${1:-}" in
-  plan)
-    refresh_refs
-    if already_published; then
-      printf 'publish=false\n' >>"${GITHUB_OUTPUT:?}"
-    else
-      printf 'publish=true\n' >>"${GITHUB_OUTPUT:?}"
-    fi
-    ;;
+  validate) validate_release_ref ;;
   build) build_apk ;;
-  publish) publish_apk ;;
-  *) fail "usage: android-tag-release.sh {plan|build|publish}" ;;
+  *) fail "usage: android-tag-release.sh {validate|build}" ;;
 esac
