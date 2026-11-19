@@ -481,6 +481,64 @@ func TestChildDoneStagesThenWrapUp(t *testing.T) {
 	}
 }
 
+func TestChildReviewWakesParentBeforeStageCloses(t *testing.T) {
+	fx := newChildDoneFixture(t, "in_progress")
+	agentID := handlerTestAgentID(t)
+	setIssueAssigneeDirect(t, fx.parent.ID, "agent", agentID)
+	dbfx.Exec(t, `UPDATE issue SET stage = 1 WHERE id = $1`, fx.child.ID)
+	next := createStagedChild(t, fx.parent.ID, 2, "backlog")
+
+	updateChildStatus(t, fx.child.ID, "in_review")
+	updateChildStatus(t, fx.child.ID, "in_review")
+	if got := dbfx.Count(t, `SELECT count(*) FROM issue_child_event WHERE child_id = $1 AND kind = 'in_review'`, fx.child.ID); got != 1 {
+		t.Fatalf("expected one review transition, got %d", got)
+	}
+	runs := childDoneRuns(t, fx.parent.ID)
+	if len(runs) != 1 || runs[0].AgentID != agentID || !strings.Contains(runs[0].Note, `"status":"in_review"`) ||
+		!strings.Contains(runs[0].Note, fx.child.ID) || strings.Contains(runs[0].Note, `"next_stage"`) {
+		t.Fatalf("expected one review wake without stage closure facts: %+v", runs)
+	}
+	rules := listSystemWakeupsFor(t, fx.parent.ID)
+	if len(rules) != 1 || rules[0].Stage == nil || *rules[0].Stage != 1 ||
+		rules[0].Remaining != 1 || len(rules[0].Waiting) != 1 || rules[0].Waiting[0] != fx.child.Identifier {
+		t.Fatalf("review changed the stage barrier: %+v", rules)
+	}
+	if dbfx.Count(t, `SELECT count(*) FROM issue WHERE id = $1 AND status = 'backlog'`, next.ID) != 1 {
+		t.Fatal("stage 2 should still be in backlog")
+	}
+	if entries := childDoneEntries(t, fx.parent.ID); len(entries) != 0 {
+		t.Fatalf("review logged a stage closure: %+v", entries)
+	}
+	if got := dbfx.Count(t, `SELECT count(*) FROM activity_log
+		WHERE issue_id = $1 AND action = 'wakeup_triggered' AND details->>'rule' = 'child_review'`, fx.parent.ID); got != 1 {
+		t.Fatalf("expected one review activity, got %d", got)
+	}
+
+	dbfx.Exec(t, `UPDATE agent_task_queue SET status = 'completed', completed_at = now() WHERE id = $1`, runs[0].ID)
+	updateChildStatus(t, fx.child.ID, "done")
+	entries := childDoneEntries(t, fx.parent.ID)
+	runs = childDoneRuns(t, fx.parent.ID)
+	if len(entries) != 1 || entries[0].Stage == nil || *entries[0].Stage != 1 || entries[0].Outcome != "woke" ||
+		len(runs) != 2 || !strings.Contains(runs[1].Note, `"next_stage":2`) {
+		t.Fatalf("expected the original stage closure wake: entries = %+v, runs = %+v", entries, runs)
+	}
+}
+
+func TestChildReviewSweepNotifiesMember(t *testing.T) {
+	fx := newChildDoneFixture(t, "in_progress")
+	setIssueAssigneeDirect(t, fx.parent.ID, "member", testUserID)
+	dbfx.Exec(t, `UPDATE issue SET status = 'in_review' WHERE id = $1`, fx.child.ID)
+	dbfx.Exec(t, `UPDATE issue_child_event SET created_at = now() - interval '1 minute' WHERE parent_id = $1`, fx.parent.ID)
+	svc := &service.IssueWakeupService{Tasks: testHandler.TaskService}
+	if err := svc.SweepChildEvents(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := dbfx.Count(t, `SELECT count(*) FROM inbox_item
+		WHERE issue_id = $1 AND recipient_id = $2 AND type = 'review_requested'`, fx.parent.ID, testUserID); got != 1 {
+		t.Fatalf("expected one review notification, got %d", got)
+	}
+}
+
 // Another run of the same agent that has not started yet reads the current
 // sub-issues when it does, so the rule hands it the stage facts when it is
 // claimed instead of queuing a second run. Claimed by a daemon that cannot

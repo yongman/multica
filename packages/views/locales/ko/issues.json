@@ -650,6 +650,7 @@
     "wakeup_triggered_acknowledged": "{{condition}} · {{agent}} 자신의 작업이라 다시 깨우지 않았습니다",
     "wakeup_triggered_manual": "{{name}}이(가) {{agent}}을(를) 바로 깨웠습니다",
     "wakeup_child_done_stage_other": "{{stage}}단계 하위 태스크 {{count}}개가 모두 끝났습니다",
+    "wakeup_child_review": "하위 태스크 검토가 요청되었습니다",
     "wakeup_child_done_all_other": "하위 태스크 {{count}}개가 모두 끝났습니다",
     "wakeup_child_done_woke": " · {{name}}을(를) 깨웠습니다",
     "wakeup_child_done_notified": " · {{name}}에게 알렸습니다",

@@ -48,6 +48,9 @@ describe("wakeup timeline entries", () => {
     expect(read(entry("wakeup_triggered", { rule: "child_done", stage: 1, total: 2, target_type: "agent", target_id: "a", outcome: "woke" }))).toBe(
       "第 1 阶段的 2 个子任务已全部结束，唤醒了 Emacs",
     );
+    expect(read(entry("wakeup_triggered", { rule: "child_review", target_type: "agent", target_id: "a", outcome: "woke" }))).toBe(
+      "子任务待验收，唤醒了 Emacs",
+    );
     expect(read(entry("wakeup_triggered", { rule: "child_done", total: 3, target_type: "member", target_id: "u", outcome: "notified" }))).toBe(
       "3 个子任务已全部结束，已通知 Jiayuan",
     );
@@ -86,6 +89,7 @@ describe("wakeup timeline entries", () => {
     const { t, text } = helpers();
     const chip = (e: TimelineEntry) => wakeupActivityChip(e, t, text, getActorName);
     expect(chip(entry("wakeup_triggered", { rule: "child_done" }))).toBe("系统规则");
+    expect(chip(entry("wakeup_triggered", { rule: "child_review" }))).toBe("系统规则");
     expect(chip(entry("wakeup_triggered", { wakeup: reply }))).toBe("Jiayuan 创建");
     expect(chip(entry("wakeup_triggered", { wakeup: { ...reply, created_by_agent_id: "a" } }))).toBe("Emacs 创建");
     expect(chip(entry("wakeup_created", { wakeup: reply }))).toBeNull();

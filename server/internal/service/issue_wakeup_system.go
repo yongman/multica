@@ -20,8 +20,8 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-// The child_done system rule wakes a parent's assignee when a stage of its
-// sub-issues closes while a later stage waits, and once more when every
+// The child_done system rule wakes a parent's assignee when a sub-issue enters
+// review, when a stage closes while a later stage waits, and when every
 // sub-issue is closed. It is an ordinary issue_wakeup row with system_rule set:
 // the shared condition, receipts, runaway protection, activity and run model
 // apply. What differs is owned by the platform: it has no fixed agent or
@@ -31,6 +31,8 @@ import (
 // polling schedule.
 const (
 	SystemRuleChildDone = "child_done"
+	childReviewTrigger  = "child_review"
+	childReviewEvent    = "children.in_review"
 	// MaxSystemWakeupInstruction bounds per-issue and workspace instructions.
 	MaxSystemWakeupInstruction = 4000
 	// WorkspaceSettingChildDone and WorkspaceSettingChildDoneInstruction hold
@@ -47,8 +49,9 @@ var childDoneCondition = json.RawMessage(`{"type":"children_done","each_stage":t
 // ChildDoneDefaultInstruction is what the woken assignee is asked to do when
 // neither the issue nor the workspace sets an instruction. The trigger facts
 // say which stage closed, which one is next and how many were cancelled.
-const ChildDoneDefaultInstruction = "Sub-issues of this issue have closed; the trigger facts list each stage and which one is next. " +
-	"If a later stage is waiting, check that its dependencies are met, then move its sub-issues out of backlog so they start. " +
+const ChildDoneDefaultInstruction = "Review the work of any sub-issue named in a children.in_review fact that still needs review. " +
+	"A sub-issue awaiting review keeps its stage open. Use the current statuses to decide whether a stage has closed. " +
+	"If a stage has closed and a later stage is waiting, check that its dependencies are met, then move its sub-issues out of backlog so they start. " +
 	"If a sub-issue in the closed stages was cancelled rather than finished, decide whether its work is still needed before advancing. " +
 	"When every sub-issue is closed, bring their results together on this issue and move it forward, or mark it ready for review when nothing remains."
 
@@ -171,6 +174,7 @@ func (s *IssueWakeupService) processChildEvents(ctx context.Context, parentID pg
 	}
 	ids := make([]pgtype.UUID, 0, len(events))
 	kinds := map[string]bool{}
+	var reviews []db.IssueChildEvent
 	// The agent runs that made the changes that can satisfy a sub-issue
 	// condition (a sub-issue closing, leaving, or changing stage), when every
 	// such change came from one. Adding or reopening a sub-issue satisfies
@@ -179,6 +183,10 @@ func (s *IssueWakeupService) processChildEvents(ctx context.Context, parentID pg
 	allSourced := true
 	for _, e := range events {
 		ids = append(ids, e.ID)
+		if e.Kind == "in_review" {
+			reviews = append(reviews, e)
+			continue
+		}
 		kinds[e.Kind] = true
 		if e.Kind == "attached" || e.Kind == "reopened" {
 			continue
@@ -226,10 +234,21 @@ func (s *IssueWakeupService) processChildEvents(ctx context.Context, parentID pg
 	}
 	payload, _ := json.Marshal(hint)
 	key := "children:" + util.UUIDToString(events[len(events)-1].ID)
+	dispatchRules := make([]db.IssueWakeup, 0, len(rules))
 	for _, w := range rules {
-		if _, err = q.RecordWakeupReceipt(ctx, db.RecordWakeupReceiptParams{ID: dbid.NewV7(), WakeupID: w.ID, Revision: w.Revision, EventKey: key, EventType: childChangeHint, Payload: payload}); err != nil {
-			return err
+		if len(kinds) > 0 {
+			if _, err = q.RecordWakeupReceipt(ctx, db.RecordWakeupReceiptParams{ID: dbid.NewV7(), WakeupID: w.ID, Revision: w.Revision, EventKey: key, EventType: childChangeHint, Payload: payload}); err != nil {
+				return err
+			}
+		} else if !w.SystemRule.Valid {
+			continue
 		}
+		if w.SystemRule.Valid && len(reviews) > 0 {
+			if err = recordChildReview(ctx, q, w, key, reviews); err != nil {
+				return err
+			}
+		}
+		dispatchRules = append(dispatchRules, w)
 	}
 	if err = finish(); err != nil {
 		return err
@@ -237,7 +256,7 @@ func (s *IssueWakeupService) processChildEvents(ctx context.Context, parentID pg
 	// People's and agents' rules first, so the system rule sees their run and
 	// waits to join it instead of starting a second one for the same fact.
 	var errs []error
-	for _, w := range rules {
+	for _, w := range dispatchRules {
 		if w.SystemRule.Valid {
 			err = s.dispatchSystem(ctx, w)
 		} else {
@@ -251,6 +270,30 @@ func (s *IssueWakeupService) processChildEvents(ctx context.Context, parentID pg
 		slog.Info("sub-issue wakeups: immediate dispatch deferred to the scheduler", "parent_id", util.UUIDToString(parent.ID), "error", errors.Join(errs...))
 	}
 	return nil
+}
+
+func recordChildReview(ctx context.Context, q *db.Queries, w db.IssueWakeup, key string, reviews []db.IssueChildEvent) error {
+	childIDs := make([]string, 0, len(reviews))
+	sourceIDs := make([]string, 0, len(reviews))
+	for _, review := range reviews {
+		childIDs = append(childIDs, util.UUIDToString(review.ChildID))
+		if review.SourceTaskID.Valid {
+			sourceIDs = append(sourceIDs, util.UUIDToString(review.SourceTaskID))
+		}
+	}
+	facts := map[string]any{
+		"status":    "in_review",
+		"child_ids": childIDs,
+	}
+	if len(sourceIDs) == len(reviews) {
+		facts["source_task_ids"] = sourceIDs
+	}
+	payload, _ := json.Marshal(facts)
+	_, err := q.RecordWakeupReceipt(ctx, db.RecordWakeupReceiptParams{
+		ID: dbid.NewV7(), WakeupID: w.ID, Revision: w.Revision,
+		EventKey: key + ":review", EventType: childReviewEvent, Payload: payload,
+	})
+	return err
 }
 
 // SweepChildEvents processes changes that were recorded but not handled
@@ -351,12 +394,16 @@ func resolveWakeTarget(ctx context.Context, q *db.Queries, issue db.Issue) (wake
 	return wakeTarget{Type: "none"}, nil
 }
 
-// childDoneFacts summarizes the newest observation for the timeline entry and
-// a member's notification: the closed stage (absent when every sub-issue
-// closed) and how many sub-issues that covers.
+// childDoneFacts summarizes the firing for the timeline and member notification.
+// A stage closure takes precedence when both facts are delivered in one run.
 func childDoneFacts(receipts []db.IssueWakeupReceipt) map[string]any {
 	facts := map[string]any{"rule": SystemRuleChildDone}
+	hasReview := false
 	for i := len(receipts) - 1; i >= 0; i-- {
+		if receipts[i].EventType == childReviewEvent {
+			hasReview = true
+			continue
+		}
 		if receipts[i].EventType != wakeupConditionEventType {
 			continue
 		}
@@ -379,6 +426,9 @@ func childDoneFacts(receipts []db.IssueWakeupReceipt) map[string]any {
 			}
 		}
 		break
+	}
+	if _, closed := facts["total"]; hasReview && !closed {
+		facts["rule"] = childReviewTrigger
 	}
 	return facts
 }
@@ -550,6 +600,7 @@ func (s *IssueWakeupService) dispatchSystem(ctx context.Context, prev db.IssueWa
 	}
 	ids := receiptIDs(receipts)
 	facts := childDoneFacts(receipts)
+	isReview := facts["rule"] == childReviewTrigger
 	if current.Type != "none" {
 		facts["target_type"], facts["target_id"] = current.Type, util.UUIDToString(current.ID)
 	}
@@ -560,10 +611,14 @@ func (s *IssueWakeupService) dispatchSystem(ctx context.Context, prev db.IssueWa
 		if current.Type == "member" {
 			facts["outcome"] = "notified"
 			details, _ := json.Marshal(facts)
+			notificationType := "children_done"
+			if isReview {
+				notificationType = "review_requested"
+			}
 			_, inserted, err := inboxwriter.Deliver(ctx, q, &pendingInbox, inboxwriter.Notification{
 				Params: db.CreateInboxItemParams{
 					ID: dbid.NewV7(), WorkspaceID: issue.WorkspaceID, RecipientType: "member", RecipientID: current.ID,
-					Type: "children_done", Severity: "info", IssueID: issue.ID, Title: issue.Title,
+					Type: notificationType, Severity: "info", IssueID: issue.ID, Title: issue.Title,
 					ActorType: pgtype.Text{String: "system", Valid: true}, Details: details,
 				},
 				IssueStatus: &issue.Status,
@@ -674,9 +729,13 @@ func (s *IssueWakeupService) dispatchSystem(ctx context.Context, prev db.IssueWa
 	overlay := s.Tasks.buildRuntimeMCPOverlay(ctx, attr.UserID, agent)
 	source, delegatedFrom, _, _ := attributionCreateParams(attr)
 	contextJSON, _ := json.Marshal(map[string]any{"wakeup_id": util.UUIDToString(w.ID), "wakeup_revision": w.Revision, "wakeup_evidence": evidence, "wakeup_system": SystemRuleChildDone})
+	triggerSummary := "Wakeup: sub-issues closed"
+	if isReview {
+		triggerSummary = "Wakeup: sub-issues ready for review"
+	}
 	task, err = q.CreateWakeupTask(ctx, db.CreateWakeupTaskParams{
 		ID: dbid.NewV7(), AgentID: agent.ID, RuntimeID: agent.RuntimeID, IssueID: issue.ID, Priority: priorityToInt(issue.Priority),
-		TriggerSummary: pgtype.Text{String: "Wakeup: sub-issues closed", Valid: true}, HandoffNote: pgtype.Text{String: noteText, Valid: true},
+		TriggerSummary: pgtype.Text{String: triggerSummary, Valid: true}, HandoffNote: pgtype.Text{String: noteText, Valid: true},
 		IsLeaderTask: pgtype.Bool{Bool: current.Type == "squad", Valid: current.Type == "squad"}, SquadID: current.SquadID,
 		OriginatorUserID: attr.UserID, AccountableUserID: attr.AccountableUserID, OriginatorSource: source, DelegatedFromTaskID: delegatedFrom,
 		RuleVersionID: attr.RuleVersionID, TriggerEvidenceKind: pgtype.Text{String: "issue_wakeup", Valid: true}, TriggerEvidenceRefID: w.ID,

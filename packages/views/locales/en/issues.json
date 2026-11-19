@@ -666,6 +666,7 @@
     "wakeup_triggered_manual": "{{name}} woke {{agent}} now",
     "wakeup_child_done_stage_one": "Stage {{stage}}'s sub-issue finished",
     "wakeup_child_done_stage_other": "Stage {{stage}}'s {{count}} sub-issues all finished",
+    "wakeup_child_review": "Sub-issue review requested",
     "wakeup_child_done_all_one": "The sub-issue finished",
     "wakeup_child_done_all_other": "All {{count}} sub-issues finished",
     "wakeup_child_done_woke": " · woke {{name}}",

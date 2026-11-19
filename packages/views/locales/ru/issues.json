@@ -687,6 +687,7 @@
     "wakeup_triggered_manual": "{{name}} разбудил(а) {{agent}} сейчас",
     "wakeup_child_done_stage_one": "Завершена {{count}} подзадача этапа {{stage}}",
     "wakeup_child_done_stage_other": "{{count}} подзадачи этапа {{stage}} завершены",
+    "wakeup_child_review": "Запрошена проверка подзадач",
     "wakeup_child_done_all_one": "Завершена {{count}} подзадача",
     "wakeup_child_done_all_other": "Все {{count}} подзадачи завершены",
     "wakeup_child_done_woke": " · разбудил(а) {{name}}",

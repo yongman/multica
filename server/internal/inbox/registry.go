@@ -54,6 +54,7 @@ var typeGroups = map[string]string{
 	"autopilot_paused":         "",
 	"autopilot_quota_exceeded": "",
 	"children_done":            "",
+	"review_requested":         "",
 	"project_owner_joined":     "",
 	// The agent is stopped until the person answers these.
 	"app_action_requested":  "",
@@ -66,7 +67,6 @@ var typeGroups = map[string]string{
 // but Deliver refuses them. Retiring a type moves it here rather than
 // deleting it.
 var legacyTypes = []string{
-	"review_requested",
 	"task_completed",
 	"agent_blocked",
 	"agent_completed",

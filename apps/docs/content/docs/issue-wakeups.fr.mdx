@@ -101,11 +101,12 @@ Pour voir tous les réveils de l'espace de travail, ouvrez **Automatisation** et
 - Une règle répétée se met en pause quand elle atteint son nombre maximal de déclenchements. Les règles d'attente se mettent aussi en pause quand elles se déclenchent mutuellement avec d'autres réveils (la chaîne passe une troisième fois par la règle sans intervention humaine), ou quand elles se déclenchent plus de 12 fois en une heure. Une règle en pause reste désactivée jusqu'à ce que quelqu'un la réactive, et son compteur repart de zéro.
 - Une tâche peut avoir au plus 32 réveils actifs, un espace de travail au plus 1 000.
 
-## Réveiller le parent quand les sous-tâches se terminent [#child-done]
+## Réveiller le parent pour la validation ou la clôture des sous-tâches [#child-done]
 
 Quand une tâche a des sous-tâches, sa section Réveils affiche une règle marquée **Système**. Personne n'a besoin de la créer :
 
-- Quand toutes les sous-tâches d'une étape sont closes alors qu'une étape suivante attend, elle réveille l'assigné du parent, puis une fois encore quand toutes les sous-tâches sont closes. Des sous-tâches sans étape réveillent le parent une fois, à la clôture de la dernière.
+- Lorsqu'une sous-tâche passe à `in_review`, la règle réveille l'assigné du parent pour la valider. La sous-tâche garde son étape ouverte jusqu'à ce qu'elle atteigne un statut terminal.
+- Quand toutes les sous-tâches d'une étape sont closes alors qu'une étape suivante attend, elle réveille l'assigné du parent, puis une fois encore quand toutes les sous-tâches sont closes. Sans étapes, la clôture de la dernière sous-tâche déclenche un seul réveil de fin.
 - Un agent assigné est réveillé ; pour un squad, c'est son chef ; un membre assigné reçoit plutôt une notification dans sa boîte de réception. Sans assigné, personne n'est réveillé.
 - Tant que le parent est en `backlog`, rien n'est réveillé ; le réveil a lieu une fois le parent sorti de `backlog`.
 - L'instruction par défaut indique à l'agent quelle étape s'est close et laquelle suit : vérifier ses dépendances, puis sortir de `backlog` les sous-tâches de l'étape suivante. Quand tout est clos, il rassemble les résultats sur le parent.

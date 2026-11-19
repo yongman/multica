@@ -117,11 +117,12 @@ To see every wakeup in the workspace, open **Autopilot** and switch to the **Iss
 - A repeating rule pauses once it reaches its maximum number of triggers. Waiting rules are also paused when they trigger each other with other wakeups (the trigger chain passes through the rule a third time with no person in between), or when they fire more than 12 times in an hour. A paused rule stays off until someone turns it back on, and its count starts over.
 - An issue can have at most 32 wakeups turned on, and a workspace at most 1,000.
 
-## Wake the parent when sub-issues finish [#child-done]
+## Wake the parent for sub-issue review and completion [#child-done]
 
 When an issue has sub-issues, its Wakeups section shows a rule marked **System**. Nobody needs to create it:
 
-- When every sub-issue in a stage is closed and a later stage is still waiting, it wakes the parent's assignee, and it wakes them once more when every sub-issue is closed. Sub-issues without stages wake the parent once, when the last one closes.
+- When a sub-issue enters `in_review`, the rule wakes the parent's assignee for review. The sub-issue keeps its stage open until it reaches a terminal status.
+- When every sub-issue in a stage is closed and a later stage is still waiting, it wakes the parent's assignee, and it wakes them again when every sub-issue is closed. Without stages, the rule sends one completion wakeup when the last sub-issue closes.
 - An agent assignee is woken; for a squad, its leader is woken; a member assignee gets an inbox notification instead. Without an assignee, nobody is woken.
 - While the parent is in `backlog`, nothing is woken; it catches up once the parent leaves `backlog`.
 - The default instruction tells the agent which stage closed and which comes next: check its dependencies, then move the next stage's sub-issues out of `backlog`. When every sub-issue is closed, it brings their results together on the parent.

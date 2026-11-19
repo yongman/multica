@@ -17,9 +17,9 @@ export type InboxItemType =
   | "mentioned"
   | "task_failed"
   | "reaction_added"
+  | "review_requested"
   // No longer written, but older servers wrote them and those rows remain;
   // keep their labels and filter groups so history still reads and filters.
-  | "review_requested"
   | "task_completed"
   | "agent_blocked"
   | "agent_completed"

@@ -64,9 +64,11 @@ stages. The platform's sub-issue wakeup **wakes the parent assignee when a stage
 closes while a later stage is waiting** — every sub-issue up to that stage has
 reached a terminal status (`done`/`cancelled`) — and **once more when every
 sub-issue, staged or not, is closed**. A completion that closes nothing is
-silent. A sibling set with **no** stages wakes the parent once, when the *last*
-sub-issue finishes. A parent in `backlog` is not woken; it catches up once it
-leaves backlog. A member assignee gets an inbox notification instead of a run.
+silent. With **no** stages, one completion wakeup fires when the *last*
+sub-issue finishes. A sub-issue entering `in_review` wakes the parent assignee
+to review its work. The stage stays open until the sub-issue reaches a terminal
+status. A parent in `backlog` catches up once it leaves backlog. A member
+assignee gets an inbox notification instead of a run.
 
 Advancement is agent-driven: the server only detects the closed barrier and
 wakes the parent assignee, who then decides whether to promote the next stage's

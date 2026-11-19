@@ -648,6 +648,7 @@
     "wakeup_triggered_manual": "{{name}} activó a {{agent}} ahora",
     "wakeup_child_done_stage_one": "La subtarea de la etapa {{stage}} terminó",
     "wakeup_child_done_stage_other": "Las {{count}} subtareas de la etapa {{stage}} terminaron todas",
+    "wakeup_child_review": "Se solicitó revisar subtareas",
     "wakeup_child_done_all_one": "La subtarea terminó",
     "wakeup_child_done_all_other": "Todas las {{count}} subtareas terminaron",
     "wakeup_child_done_woke": " · activó a {{name}}",

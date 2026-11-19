@@ -666,6 +666,7 @@
     "wakeup_triggered_manual": "{{name}} a réveillé {{agent}} maintenant",
     "wakeup_child_done_stage_one": "La sous-tâche de l’étape {{stage}} est terminée",
     "wakeup_child_done_stage_other": "Les {{count}} sous-tâches de l’étape {{stage}} sont terminées",
+    "wakeup_child_review": "Validation demandée pour des sous-tâches",
     "wakeup_child_done_all_one": "La sous-tâche est terminée",
     "wakeup_child_done_all_other": "Les {{count}} sous-tâches sont terminées",
     "wakeup_child_done_woke": " · {{name}} réveillé",
