@@ -186,6 +186,7 @@ export default function IssuesPage() {
           renderItem={({ item }) => (
             <IssueRow
               issue={item}
+              allowCompletion
               onPress={() => {
                 if (wsSlug) router.push(`/${wsSlug}/issue/${item.id}`);
               }}

@@ -16,7 +16,9 @@ import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { InboxDetailLabel } from "@/components/inbox/detail-label";
+import { useCompleteIssueAction } from "@/components/issue/use-complete-issue-action";
 import { getInboxDisplayTitle } from "@/lib/inbox-display";
+import { issueStatusCategory } from "@/lib/issue-status";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
@@ -28,13 +30,24 @@ interface Props {
 
 export function InboxRow({ item, onPress }: Props) {
   const isUnread = !item.read;
-  const { categoryOf, colorOf, iconOf } = useIssueStatuses();
+  const { categoryOf, colorOf, iconOf, entryOf } = useIssueStatuses();
+  const onLongPress = useCompleteIssueAction(
+    item.issue_id,
+    item.issue_status ? issueStatusCategory({
+      status: item.issue_status,
+      status_category: entryOf(item.issue_status)?.category,
+    }) : null,
+  );
   const displayTitle = getInboxDisplayTitle(item);
   const actorType = item.actor_type ?? item.recipient_type;
   const actorId = item.actor_id ?? item.recipient_id;
 
   return (
-    <Pressable onPress={onPress} className="bg-background active:bg-secondary px-4 py-3">
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      className="bg-background active:bg-secondary px-4 py-3"
+    >
       <View className="flex-row gap-3">
         <ActorAvatar type={actorType} id={actorId} size={36} showPresence />
         <View className="flex-1 min-w-0">

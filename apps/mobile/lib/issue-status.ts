@@ -195,6 +195,10 @@ export function issueBehavesAsAny(
 /** The categories that mean "this issue is closed" — done or cancelled. */
 export const CLOSED_CATEGORIES: readonly IssueStatusCategory[] = ["done", "closed"];
 
+export function isOpenIssueCategory(category: IssueStatusCategory | null): boolean {
+  return category === "unstarted" || category === "started";
+}
+
 /**
  * The `#rrggbb` a surface must paint one catalog entry with, or null when it
  * keeps its category's semantic token.
