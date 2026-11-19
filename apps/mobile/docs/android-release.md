@@ -117,15 +117,13 @@ tag. That commit must already be in `origin/android` history and contain
 Use a new tag name. Check the repository's existing tags before choosing one
 because tags are shared across branches.
 
-Both release jobs use the repository's Linux x64 self-hosted runner with the
+The workflow uses the repository's Linux x64 self-hosted runner with the
 `multica-android-cd` label. Keep that runner online before pushing a release tag.
 
-The publish job makes a fast-forward push to `android` with its own
-`GITHUB_TOKEN` and `contents: write`. Enable Actions on the fork and ensure
-the repository's rules allow the Actions identity to push to `android`.
-Limit creation and updates of `v*` tags to trusted release maintainers. The
-workflow skips deletion events and checks that the tag still points to the
-same commit before publishing.
+Enable Actions on the fork and limit creation and updates of `v*` tags to
+trusted release maintainers. The workflow skips deletion events, checks that the
+tag still points to the same commit before building and uploading, and runs with
+read-only repository access.
 
 ### Configure release signing
 
@@ -167,16 +165,16 @@ git tag -a v0.1.7 origin/android -m 'Android APK v0.1.7'
 git push origin refs/tags/v0.1.7
 ```
 
-The bot adds `android-apks/v0.1.7/multica-0.1.7-1008.apk` and its `.sha256`
-and `.json` sidecars to `android`. The JSON records the exact source commit,
-ABI, Android version and signer. Run `sha256sum -c multica-0.1.7-1008.apk.sha256`
-from that directory to check the downloaded file. GitHub limits each APK to
-100 MiB.
+Sign in to GitHub, open **Actions → Android APK Release**, and select the run for
+your tag. Download `android-apk` from the run's **Artifacts** section within
+three days. The archive contains `multica-0.1.7-1008.apk` and its `.sha256` and
+`.json` sidecars. The JSON records the exact source commit, ABI, Android version
+and signer. Extract the archive and run
+`sha256sum -c multica-0.1.7-1008.apk.sha256` to check the APK.
 
-Rerunning a published tag for the same source leaves the existing commit and
-APK in place. Reusing a published tag for a different commit fails. If a release
-attempt fails, keep the original tag and rerun it. For a source fix, push a new
-version tag. Deleting a tag leaves its published files in `android`.
+Rerunning the workflow rebuilds the APK and replaces the artifact for that run.
+Keep the original tag when retrying a failed release. Push a new version tag
+from the updated `android` branch for a source fix.
 
 ## Verification
 
