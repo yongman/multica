@@ -414,7 +414,7 @@ export function patchIssuesList(
   reconcileIssueFullSnapshotRevision(qc, wsId, partial.id, partial.revision);
 }
 
-export function prependToIssuesList(
+export function applyIssueCreated(
   qc: QueryClient,
   wsId: string,
   issue: Issue,
@@ -424,6 +424,9 @@ export function prependToIssuesList(
     if (old.some((i) => i.id === issue.id)) return old;
     return [issue, ...old];
   });
+  if (issue.project_id) {
+    void qc.invalidateQueries({ queryKey: issueKeys.projectList(wsId, issue.project_id), exact: true });
+  }
 }
 
 export function removeFromIssuesList(

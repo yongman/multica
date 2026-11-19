@@ -69,7 +69,7 @@ export default function ProjectDetail() {
       detail.refetch(),
       qc.invalidateQueries({ queryKey: projectResourcesOptions(wsId, id).queryKey }),
       qc.invalidateQueries({
-        queryKey: [...issueKeys.list(wsId), "byProject", id],
+        queryKey: issueKeys.projectList(wsId, id),
       }),
     ]);
   }, [detail, qc, wsId, id]);

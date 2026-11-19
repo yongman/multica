@@ -65,11 +65,7 @@ export const projectResourcesOptions = (wsId: string | null, id: string) =>
  */
 export const projectIssuesOptions = (wsId: string | null, projectId: string) =>
   queryOptions({
-    queryKey: [
-      ...issueKeys.list(wsId),
-      "byProject",
-      projectId,
-    ] as const,
+    queryKey: issueKeys.projectList(wsId, projectId),
     queryFn: ({ signal }) => fetchAllIssues(wsId, { project_id: projectId }, signal),
     enabled: !!wsId && !!projectId,
   });

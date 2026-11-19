@@ -45,7 +45,7 @@ import { useAuthStore } from "@/data/auth-store";
 import { useCreateIssue, useQuickCreateIssue } from "@/data/mutations/issues";
 import { agentListOptions } from "@/data/queries/agents";
 import { memberListOptions } from "@/data/queries/members";
-import { projectDetailOptions } from "@/data/queries/projects";
+import { findProject, projectDetailOptions, projectListOptions } from "@/data/queries/projects";
 import { currentSessionEpoch, sessionEpochChanged } from "@/data/session-epoch";
 import { useNewIssueDraftStore } from "@/data/stores/new-issue-draft-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
@@ -62,11 +62,23 @@ export default function NewIssueModal() {
   const wsId = useWorkspaceStore((state) =>
     state.currentWorkspaceSlug === workspace ? state.currentWorkspaceId : null,
   );
-  const project = useQuery(projectDetailOptions(wsId, projectId ?? ""));
+  const [initialProject, setInitialProject] = useState<Project | null>(null);
+  const sourceOptions = projectDetailOptions(wsId, projectId ?? "");
+  const source = useQuery({
+    ...sourceOptions,
+    enabled: sourceOptions.enabled && !initialProject,
+  });
 
-  if (!projectId) return <NewIssueForm />;
+  if (!projectId || initialProject) {
+    return <NewIssueForm initialProject={initialProject} />;
+  }
 
-  if (project.isPending) {
+  if (source.data?.id && !source.data.archived_at) {
+    setInitialProject(source.data);
+    return null;
+  }
+
+  if (source.isPending) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator />
@@ -74,23 +86,19 @@ export default function NewIssueModal() {
     );
   }
 
-  if (!project.data?.id || project.data.archived_at) {
-    return (
-      <View className="flex-1 items-center justify-center gap-3 bg-background px-4">
-        <Text className="text-sm text-muted-foreground">{t("new.project_unavailable")}</Text>
-        {project.isError && (
-          <Button variant="outline" onPress={() => project.refetch()}>
-            <Text>{t("common:actions.retry")}</Text>
-          </Button>
-        )}
-      </View>
-    );
-  }
-
-  return <NewIssueForm key={projectId} initialProject={project.data} />;
+  return (
+    <View className="flex-1 items-center justify-center gap-3 bg-background px-4">
+      <Text className="text-sm text-muted-foreground">{t("new.project_unavailable")}</Text>
+      {source.isError && (
+        <Button variant="outline" onPress={() => source.refetch()}>
+          <Text>{t("common:actions.retry")}</Text>
+        </Button>
+      )}
+    </View>
+  );
 }
 
-function NewIssueForm({ initialProject = null }: { initialProject?: Project | null }) {
+function NewIssueForm({ initialProject }: { initialProject: Project | null }) {
   const { t } = useT("issues");
   const navigation = useNavigation();
   const [agentMode, setAgentMode] = useState(false);
@@ -111,19 +119,25 @@ function NewIssueForm({ initialProject = null }: { initialProject?: Project | nu
   const dueDate = useNewIssueDraftStore((s) => s.dueDate);
   const project = useNewIssueDraftStore((s) => s.project);
   const resetDraft = useNewIssueDraftStore((s) => s.reset);
-  const [defaultProject] = useState(initialProject);
 
   useEffect(() => {
-    resetDraft(defaultProject);
+    resetDraft(initialProject);
     return () => {
       resetDraft();
     };
-  }, [defaultProject, resetDraft]);
+  }, [initialProject, resetDraft]);
 
   const createIssue = useCreateIssue();
   const quickCreate = useQuickCreateIssue();
   const isSubmitting = createIssue.isPending || quickCreate.isPending;
   const wsId = useWorkspaceStore((state) => state.currentWorkspaceId);
+  const projectId = project?.id ?? null;
+  const { data: projects } = useQuery({
+    ...projectListOptions(wsId),
+    enabled: !!wsId && !!projectId,
+  });
+  const selectedProject = projects ? findProject(projects, projectId) : project;
+  const projectUnavailable = !!projectId && (!selectedProject || !!selectedProject.archived_at);
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const agents = useQuery({ ...agentListOptions(wsId), enabled: !!wsId && agentMode });
   const members = useQuery({ ...memberListOptions(wsId), enabled: !!wsId && agentMode });
@@ -141,9 +155,9 @@ function NewIssueForm({ initialProject = null }: { initialProject?: Project | nu
   const trimmedPrompt = prompt.trim();
   const agentRequest =
     agentMode && selectedAgent && trimmedPrompt && !agentListFailed && !waitingForAgents
-      ? { prompt: trimmedPrompt, agent_id: selectedAgent.id, project_id: project?.id }
+      ? { prompt: trimmedPrompt, agent_id: selectedAgent.id, project_id: projectId ?? undefined }
       : null;
-  const canSubmit = !isSubmitting && (agentMode ? !!agentRequest : !!title.trim());
+  const canSubmit = !isSubmitting && !projectUnavailable && (agentMode ? !!agentRequest : !!title.trim());
 
   async function onSubmit() {
     if (!canSubmit || submitting.current) return;
@@ -162,7 +176,7 @@ function NewIssueForm({ initialProject = null }: { initialProject?: Project | nu
             ? { assignee_type: assignee.type, assignee_id: assignee.id }
             : {}),
           ...(dueDate ? { due_date: dueDate } : {}),
-          ...(project ? { project_id: project.id } : {}),
+          ...(projectId ? { project_id: projectId } : {}),
         });
       }
       if (!sessionEpochChanged(epoch) && navigation.isFocused()) {
@@ -293,6 +307,9 @@ function NewIssueForm({ initialProject = null }: { initialProject?: Project | nu
               />
               <CreateFormAttributeRow />
             </>
+          )}
+          {projectUnavailable && (
+            <Text className="text-sm text-destructive">{t("new.project_unavailable")}</Text>
           )}
         </ScrollView>
 

@@ -35,7 +35,6 @@ import { isBuiltInIssueStatus, statusCategoryOfKey } from "@/lib/issue-status";
 import { appConfigOptions } from "@/data/queries/billing";
 import { issueKeys } from "@/data/queries/issues";
 import { inboxKeys } from "@/data/queries/inbox";
-import { projectIssuesOptions } from "@/data/queries/projects";
 import { useAuthStore } from "@/data/auth-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { useFailedCommentsStore } from "@/data/stores/failed-comments-store";
@@ -700,7 +699,7 @@ export function useCreateIssue() {
     mutationFn: (body: CreateIssueRequest) => api.createIssue(body),
     onSuccess: (_issue, { project_id }) => {
       if (project_id) {
-        qc.invalidateQueries({ queryKey: projectIssuesOptions(wsId, project_id).queryKey });
+        qc.invalidateQueries({ queryKey: issueKeys.projectList(wsId, project_id), exact: true });
       }
       qc.invalidateQueries({ queryKey: issueKeys.myAll(wsId) });
       qc.invalidateQueries({ queryKey: inboxKeys.all(wsId) });

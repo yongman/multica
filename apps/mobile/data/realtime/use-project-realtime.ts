@@ -12,12 +12,9 @@
  *   - project:deleted → drop detail + resources, then fire `onDeleted` so
  *                       the screen pops back instead of stranding the user
  *                       on a 404 page.
- *   - issue:updated/created/deleted → patch the related-issues cache so
- *                       the list under the project stays in sync.
- *                       Listing-level hooks (use-my-issues-realtime) only
- *                       patch `issueKeys.myAll(wsId)`; this cache lives
- *                       under `issueKeys.list(wsId)` with a "byProject"
- *                       suffix and isn't covered by them.
+ *   - issue:updated/deleted → patch the related-issues cache so the project
+ *                       list stays in sync. useIssuesRealtime handles
+ *                       issue:created for all project lists.
  *   - reconnect       → invalidate detail + resources + related-issues
  *                       (we may have missed events while disconnected).
  *
@@ -44,11 +41,7 @@ export function useProjectRealtime(
     (ws, wsId) => {
       if (!projectId) return;
 
-      const issueListKey = [
-        ...issueKeys.list(wsId),
-        "byProject",
-        projectId,
-      ] as const;
+      const issueListKey = issueKeys.projectList(wsId, projectId);
 
       const invalidateThisProject = () => {
         qc.invalidateQueries({ queryKey: projectKeys.detail(wsId, projectId) });
@@ -93,12 +86,6 @@ export function useProjectRealtime(
             }
             return old.filter((i) => i.id !== issue.id);
           });
-        }),
-        ws.on("issue:created", (payload) => {
-          if (payload.issue.project_id !== projectId) return;
-          // Server is the authority on list position — invalidate so we
-          // refetch with the correct ordering rather than guessing.
-          qc.invalidateQueries({ queryKey: issueListKey });
         }),
         ws.on("issue:deleted", (payload) => {
           qc.setQueryData<Issue[]>(issueListKey, (old) =>
