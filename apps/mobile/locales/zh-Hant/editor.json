@@ -12,6 +12,10 @@
     "copied": "程式碼已複製",
     "copy": "複製程式碼"
   },
+  "preview": {
+    "title": "附件預覽",
+    "failed": "無法預覽此檔案。"
+  },
   "upload": {
     "file_too_large_title": "檔案過大",
     "file_too_large_message": "檔案必須小於 100 MB。",

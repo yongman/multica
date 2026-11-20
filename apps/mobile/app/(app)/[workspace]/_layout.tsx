@@ -150,6 +150,10 @@ export default function WorkspaceLayout() {
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
+          name="attachment/[id]"
+          options={{ presentation: "modal", headerLeft: () => <ModalCloseButton /> }}
+        />
+        <Stack.Screen
           name="issue/[id]"
           options={{
             title: t("navigation:routes.issue"),

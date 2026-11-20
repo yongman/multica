@@ -177,3 +177,21 @@ describe("native attachment metadata", () => {
     expect(metadata.download_url).toBe("/api/attachments/attachment-1/signed-download?sig=s");
   });
 });
+
+describe("native attachment preview content", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("reads a text body from the workspace-scoped endpoint", async () => {
+    const fetchMock = vi.fn(async () => new Response("# Preview"));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(api.getAttachmentTextContent("attachment-1", "test-workspace")).resolves.toBe("# Preview");
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      "https://api.example.test/api/attachments/attachment-1/content",
+      expect.objectContaining({
+        credentials: "omit",
+        headers: expect.objectContaining({ "X-Workspace-Slug": "test-workspace" }),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+  });
+});
