@@ -12,9 +12,8 @@
  *   2. File card lines `!file[name](url)` → standard link `[📎 name](url)`.
  *      marked.js doesn't recognize the `!file` prefix; web's preprocess
  *      turns it into HTML, which mobile can't render natively. Rewriting
- *      to a normal link with a 📎 emoji makes it a tappable link that
- *      `Linking.openURL` opens in the system viewer (Safari for PDFs,
- *      QuickLook for docs, share sheet for arbitrary files). An image card
+ *      to a normal link with a 📎 emoji makes it tappable through the
+ *      attachment open flow. An image card
  *      becomes `![name](url)` instead, as web renders it inline, so it is
  *      tappable and part of the screen's lightbox sequence.
  *

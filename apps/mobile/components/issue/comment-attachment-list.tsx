@@ -19,15 +19,15 @@
  * For v1 we render images via the same `MarkdownImage` used by inline
  * markdown rendering (consistent aspect-ratio + lightbox behavior). Non-
  * image attachments render as a tappable file card showing 📎 + filename
- * + size hint, opening the canonical download URL on tap.
+ * + size hint.
  */
 import { useMemo } from "react";
-import { Pressable, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { Attachment } from "@multica/core/types";
 import { standaloneAttachments } from "@/lib/attachment-dedup";
 import { MarkdownImage } from "@/lib/markdown/markdown-image";
-import { openAttachment } from "@/data/attachment-media";
+import { attachmentPreviewFormat, openAttachment } from "@/data/attachment-media";
 import { attachmentSource } from "@/lib/attachment-source";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
@@ -92,6 +92,7 @@ function FileCard({
   theme: typeof THEME["light"];
 }) {
   const sizeLabel = formatBytes(attachment.size_bytes);
+  const previewable = Platform.OS === "android" && attachmentPreviewFormat(attachment);
   return (
     <Pressable
       onPress={() => { void openAttachment(attachmentSource(attachment.download_url || attachment.url, [attachment])); }}
@@ -116,7 +117,7 @@ function FileCard({
         ) : null}
       </View>
       <Ionicons
-        name="download-outline"
+        name={previewable ? "eye-outline" : "download-outline"}
         size={18}
         color={theme.mutedForeground}
       />

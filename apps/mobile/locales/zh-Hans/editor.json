@@ -12,6 +12,10 @@
     "copied": "代码已复制",
     "copy": "复制代码"
   },
+  "preview": {
+    "title": "附件预览",
+    "failed": "无法预览此文件。"
+  },
   "upload": {
     "file_too_large_title": "文件过大",
     "file_too_large_message": "文件必须小于 100 MB。",

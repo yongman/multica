@@ -226,6 +226,7 @@ class ApiClient {
     path: string,
     init: RequestInit & { signal?: AbortSignal } = {},
     multipart = false,
+    responseType: "json" | "text" = "json",
   ): Promise<T> {
     const generation = this.generation;
     const assertCurrent = () => {
@@ -287,7 +288,7 @@ class ApiClient {
       }
       console.log(`[api] ← ${res.status} ${path}`, { rid, duration });
       if (res.status === 204) return undefined as T;
-      const body: unknown = await res.json();
+      const body: unknown = await (responseType === "text" ? res.text() : res.json());
       assertCurrent();
       return body as T;
     } catch (error) {
@@ -727,6 +728,15 @@ class ApiClient {
     const parsed = AttachmentSchema.safeParse(raw);
     if (!parsed.success) throw new ApiError("Attachment response invalid", 0, raw);
     return parsed.data;
+  }
+
+  async getAttachmentTextContent(id: string, workspace: string, signal?: AbortSignal): Promise<string> {
+    return this.fetch<string>(
+      `/api/attachments/${encodeURIComponent(id)}/content`,
+      { headers: { "X-Workspace-Slug": workspace }, signal },
+      false,
+      "text",
+    );
   }
 
   // Active tasks for an issue (status in queued/dispatched/running). Returns

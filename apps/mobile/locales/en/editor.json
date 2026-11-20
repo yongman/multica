@@ -12,6 +12,10 @@
     "copied": "Code copied",
     "copy": "Copy code"
   },
+  "preview": {
+    "title": "Attachment preview",
+    "failed": "Could not preview this file."
+  },
   "upload": {
     "file_too_large_title": "File too large",
     "file_too_large_message": "Files must be smaller than 100 MB.",
