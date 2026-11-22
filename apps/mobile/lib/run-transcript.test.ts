@@ -81,7 +81,7 @@ describe("historical run transcript", () => {
   it("redacts tool context and retains file paths in the collapsed heading", () => {
     expect(runToolContext({ ...message(1, "tool_use"), input: { file_path: "src/main.ts" } })).toBe("src/main.ts");
     expect(runToolContext({ ...message(1, "tool_use"), input: { command: "echo Authorization: Bearer fake-value" } }))
-      .toBe("echo Authorization: Bearer [REDACTED]");
+      .toBe("echo Authorization: [REDACTED]");
     expect(runToolContext(undefined)).toBeUndefined();
   });
 
@@ -127,6 +127,90 @@ describe("historical run transcript", () => {
       token_count: 256,
       file_key: "docs/readme",
       secret_name: "deployment-secret",
+    });
+    expect(input).toEqual(original);
+  });
+
+  it.each(["cmd", "command"])("redacts raw headers in %s before previewing or displaying input", (field) => {
+    const command = `curl -H "Authorization: Basic dXNlcjpwYXNz" -H 'Cookie: session=opaque-cookie; csrf=opaque-csrf' -H "X-API-Key: opaque-api-key" -H "Accept: application/json" https://example.test`;
+    const safeCommand = `curl -H "Authorization: [REDACTED]" -H 'Cookie: [REDACTED]' -H "X-API-Key: [REDACTED]" -H "Accept: application/json" https://example.test`;
+    const call = { ...message(1, "tool_use"), tool: "exec_command", input: { [field]: command } };
+    const original = structuredClone(call);
+    const entry = buildRunTranscriptEntries([call])[0];
+    if (entry.kind !== "tool") throw new Error("expected tool");
+
+    expect(runToolContext(call)).toBe(safeCommand);
+    expect(runEntrySummary(entry)).toBe(safeCommand);
+    expect(entry.call?.input).toEqual({ [field]: safeCommand });
+    expect(JSON.stringify(entry.call?.input, null, 2)).not.toMatch(/dXNlcjpwYXNz|opaque-/);
+    expect(buildRunTranscript([entry.call!])[0].input).toEqual(entry.call?.input);
+    expect(call).toEqual(original);
+  });
+
+  it.each([
+    [`-H "aUtHoRiZaTiOn: Bearer opaque-token"`, `-H "aUtHoRiZaTiOn: [REDACTED]"`],
+    [`-H 'Authorization: Digest username="user", response="opaque-digest"'`, `-H 'Authorization: [REDACTED]'`],
+    ['-H "Authorization: Digest username=\\"user\\", response=\\"opaque-digest\\""', '-H "Authorization: [REDACTED]"'],
+    [`-H "Authorization: Custom opaque-token"`, `-H "Authorization: [REDACTED]"`],
+    [`-H 'Proxy-Authorization: Basic opaque-proxy'`, `-H 'Proxy-Authorization: [REDACTED]'`],
+    [`-H 'Set-Cookie: session=opaque-cookie; Secure'`, `-H 'Set-Cookie: [REDACTED]'`],
+    [`-H 'X-Auth-Token: opaque-token' -H 'X-Access-Token: opaque-access'`, `-H 'X-Auth-Token: [REDACTED]' -H 'X-Access-Token: [REDACTED]'`],
+    ['Authorization: Basic opaque-basic\r\nCookie: session=opaque-cookie; csrf=opaque-csrf\nX-API-Key: opaque-key\nAccept: application/json',
+      'Authorization: [REDACTED]\r\nCookie: [REDACTED]\nX-API-Key: [REDACTED]\nAccept: application/json'],
+    [`curl -H "Authorization: Basic partial-credential`, `curl -H "Authorization: [REDACTED]`],
+    ['curl -H "Content-Type: application/json" -H "X-Custom-Authorization: public" -H "X-API-Keyboard: standard"',
+      'curl -H "Content-Type: application/json" -H "X-Custom-Authorization: public" -H "X-API-Keyboard: standard"'],
+  ])("redacts sensitive header values in raw text: %s", (raw, safe) => {
+    const items = buildRunTranscript([
+      { ...message(1, "tool_use"), input: { request: [{ text: raw }] } },
+      { ...message(2, "tool_result"), output: raw },
+      message(3, "error", raw),
+    ]);
+    expect(items[0].input).toEqual({ request: [{ text: safe }] });
+    expect(items[1].output).toBe(safe);
+    expect(items[2].content).toBe(safe);
+    expect(getRunDiagnostics({ status: "failed", error: raw })?.error).toBe(safe);
+  });
+
+  it("redacts raw headers after coalescing and before clipping a streamed preview", () => {
+    const prefix = `${"x".repeat(200)} curl -H "`;
+    const items = buildRunTranscript([
+      message(1, "text", `${prefix}Autho`),
+      message(2, "text", `rization: Basic opaque-credential-that-crosses-the-preview-limit" --verbose`),
+    ]);
+    expect(items[0].content).toBe(`${prefix}Authorization: [REDACTED]" --verbose`);
+    const summary = runEntrySummary(buildRunTranscriptEntries(items)[0]);
+    expect(summary).not.toContain("opaque");
+    expect(summary).toHaveLength(240);
+  });
+
+  it("redacts prefixed credential fields in nested environment maps at segment boundaries", () => {
+    const credentials = {
+      AWS_SESSION_TOKEN: "opaque-session",
+      SERVICE_API_KEY: "opaque-api-key",
+      SERVICE_ACCESS_TOKEN: "opaque-access",
+      SERVICE_SECRET: "opaque-secret",
+      SERVICE_TOKEN: "opaque-token",
+      SERVICE_PASSWORD: "opaque-password",
+      SERVICE_SECRET_ACCESS_KEY: "opaque-secret-access",
+      SERVICE_PRIVATE_KEY: "opaque-private-key",
+      SERVICE_CLIENT_SECRET: "opaque-client-secret",
+      SERVICE_CREDENTIALS: { value: "opaque-credentials" },
+      "service-api-key": "opaque-hyphenated-key",
+    };
+    const ordinary = {
+      token_count: 256, file_key: "docs/readme", secret_name: "deployment-secret",
+      SERVICE_TOKEN_COUNT: 512, SERVICE_FILE_KEY: "artifact", SERVICE_SECRET_NAME: "secret-resource",
+      tokenCount: 12, secretName: "resource", mytoken: "ordinary", api_keyboard: "standard",
+    };
+    const input = { nested: [{ env: { ...credentials, ...ordinary } }], ...ordinary };
+    const original = structuredClone(input);
+    expect(buildRunTranscript([{ ...message(1, "tool_use"), input }])[0].input).toEqual({
+      nested: [{ env: {
+        ...Object.fromEntries(Object.keys(credentials).map((key) => [key, "[REDACTED]"])),
+        ...ordinary,
+      } }],
+      ...ordinary,
     });
     expect(input).toEqual(original);
   });
@@ -342,7 +426,7 @@ describe("historical run transcript", () => {
     expect(getRunDiagnostics(AgentTaskSchema.parse({
       id: "task-1", status: "failed", failure_reason: "future_reason",
       error: "Authorization: Bearer fake-value",
-    }))).toEqual({ reasonKey: "failure_reason.default", error: "Authorization: Bearer [REDACTED]" });
+    }))).toEqual({ reasonKey: "failure_reason.default", error: "Authorization: [REDACTED]" });
     expect(getRunDiagnostics(AgentTaskSchema.parse({ id: "task-1", status: "completed" }))).toBeNull();
   });
 });

@@ -107,6 +107,28 @@ describe("live execution card wiring", () => {
     });
   });
 
+  it("uses sanitized commands for the preview and passes sanitized parameters to expanded steps", () => {
+    state.query.data = [{
+      task_id: task.id, issue_id: task.issue_id, seq: 1, type: "tool_use",
+      call_id: "request", tool: "exec_command",
+      input: {
+        command: `curl -H "Authorization: Basic opaque-basic" https://example.test`,
+        env: { AWS_SESSION_TOKEN: "opaque-session", token_count: 12 },
+      },
+    }];
+    const original = structuredClone(state.query.data);
+    const { nodes } = open();
+    const safeCommand = `curl -H "Authorization: [REDACTED]" https://example.test`;
+    expect(content(nodes.find((node) => node.type === "CollapsibleTrigger"))).toContain(safeCommand);
+    expect(nodes.find((node) => node.type === "TranscriptEntry")?.props.item).toMatchObject({
+      call: { input: {
+        command: safeCommand,
+        env: { AWS_SESSION_TOKEN: "[REDACTED]", token_count: 12 },
+      } },
+    });
+    expect(state.query.data).toEqual(original);
+  });
+
   it("offers a retry after a failed load while retaining streamed steps", () => {
     state.query.isError = true;
     const { nodes } = open();

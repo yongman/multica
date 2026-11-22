@@ -38,8 +38,8 @@ const builtRuns = new WeakMap<
   { members: readonly TaskMessagePayload[]; message: TaskMessagePayload }
 >();
 
-// Exact normalized names keep credentials hidden without treating file keys,
-// token counts or secret resource names as credential values.
+// Match whole names or suffixes at segment boundaries, so SERVICE_API_KEY is
+// sensitive while file_key, token_count and secret_name remain useful.
 const CREDENTIAL_FIELDS = new Set([
   "authorization", "proxyauthorization", "cookie", "setcookie",
   "apikey", "xapikey", "apisecret", "secret", "secretkey",
@@ -55,13 +55,39 @@ const SUMMARY_FIELDS = [
 ] as const;
 
 function isCredentialField(key: string): boolean {
-  return CREDENTIAL_FIELDS.has(key.replace(/[-_\s]/g, "").toLowerCase());
+  const segments = key.toLowerCase().split(/[-_\s]+/);
+  return segments.some((_, index) => CREDENTIAL_FIELDS.has(segments.slice(index).join("")));
+}
+
+const CREDENTIAL_HEADER =
+  "(?:(?:proxy-)?authorization|(?:set-)?cookie|(?:x-)?api-key|x-(?:auth|access)-token)";
+// Quoted command headers end at the matching unescaped quote; bare HTTP
+// headers end at the line boundary. Incomplete streamed headers are masked too.
+const CREDENTIAL_HEADER_TEXT = new RegExp(
+  String.raw`(["'])(${CREDENTIAL_HEADER}[ \t]*:[ \t]*)(?:\\[^\r\n]|(?!\1)[^\\\r\n])*(\1|(?=[\r\n]|$))|((?:^|[^\w-])${CREDENTIAL_HEADER}[ \t]*:[ \t]*)[^\r\n]*`,
+  "gim",
+);
+
+function redactRunText(text: string): string {
+  let result = "";
+  let offset = 0;
+  for (const match of text.matchAll(CREDENTIAL_HEADER_TEXT)) {
+    const [header, quote, quotedName, closingQuote, bareName] = match;
+    // Apply generic patterns only outside the masked header, so TOKEN patterns
+    // cannot consume its placeholder and closing quote.
+    result += redactSecrets(text.slice(offset, match.index));
+    result += quote
+      ? `${quote}${quotedName}[REDACTED]${closingQuote}`
+      : `${bareName}[REDACTED]`;
+    offset = match.index + header.length;
+  }
+  return result + redactSecrets(text.slice(offset));
 }
 
 function redactInput(value: unknown, key = ""): unknown {
   if (isCredentialField(key)) return "[REDACTED]";
   if (typeof value === "string") {
-    return redactSecrets(value);
+    return redactRunText(value);
   }
   if (Array.isArray(value)) {
     if (key.toLowerCase() === "headers" && typeof value[0] === "string" && isCredentialField(value[0])) {
@@ -91,9 +117,9 @@ function buildRun(members: TaskMessagePayload[]): TaskMessagePayload {
   }
   const message = {
     ...merged,
-    tool: merged.tool ? redactSecrets(merged.tool) : merged.tool,
-    content: merged.content ? redactSecrets(merged.content) : merged.content,
-    output: merged.output ? redactSecrets(merged.output) : merged.output,
+    tool: merged.tool ? redactRunText(merged.tool) : merged.tool,
+    content: merged.content ? redactRunText(merged.content) : merged.content,
+    output: merged.output ? redactRunText(merged.output) : merged.output,
     input: merged.input ? redactInput(merged.input) as Record<string, unknown> : merged.input,
   };
   builtRuns.set(first, { members, message });
@@ -187,7 +213,7 @@ export function runEntrySummary(entry: RunTranscriptEntry): string {
     ? runToolContext(entry.call) || entry.call?.tool || entry.result?.tool || ""
     : entry.message.content || "";
   // Redact the entire value before clipping, including the accessibility label.
-  return redactSecrets(text).replace(/\s+/g, " ").trim().slice(0, 240);
+  return redactRunText(text).replace(/\s+/g, " ").trim().slice(0, 240);
 }
 
 /** Only identified unfinished calls can outrank newer activity. */
@@ -212,6 +238,6 @@ export function getRunDiagnostics(
   task: Pick<AgentTask, "status" | "failure_reason" | "error">,
 ) {
   const reasonKey = task.status === "failed" ? failureReasonKey(task.failure_reason) : null;
-  const error = task.error?.trim() ? redactSecrets(task.error) : null;
+  const error = task.error?.trim() ? redactRunText(task.error) : null;
   return reasonKey || error ? { reasonKey, error } : null;
 }
