@@ -70,4 +70,19 @@ describe("transcript input display", () => {
     expect(displayed).not.toMatch(/opaque-/);
     expect(items).toEqual(original);
   });
+
+  it.each(["cmd", "command"])("hides split header names in the final %s JSON while preserving non-sensitive source text", (field) => {
+    const command = `curl -H 'Authorization'': Basic opaque-basic' --header="X-API-""Key: opaque-api" -HCookie\\\n:\\ session=opaque-cookie -H "Ac""cept: application/json" --verbose`;
+    const safeCommand = `curl -H 'Authorization: [REDACTED]' --header="X-API-Key: [REDACTED]" -HCookie:[REDACTED] -H "Ac""cept: application/json" --verbose`;
+    const items: TaskMessagePayload[] = [{
+      task_id: task.id, issue_id: task.issue_id, seq: 1, type: "tool_use",
+      call_id: "request", tool: "exec_command", input: { [field]: command },
+    }];
+    const nodes = renderedElements(RunTranscript({ items, task, header: createElement("View") }));
+    const displayed = nodes.find((node) => node.type === "Text" && node.props.selectable)?.props.children;
+    expect(displayed).toBe(JSON.stringify({ [field]: safeCommand }, null, 2));
+    expect(JSON.parse(displayed as string)).toEqual({ [field]: safeCommand });
+    expect(displayed).not.toContain("opaque-");
+    expect(items[0].input).toEqual({ [field]: command });
+  });
 });

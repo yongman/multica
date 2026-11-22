@@ -1,6 +1,6 @@
 import type { AgentTask, TaskMessagePayload } from "@multica/core/types";
-import { redactSecrets } from "@multica/core/security/redact-secrets";
 import { failureReasonKey } from "./failure-reason-label";
+import { redactRunText } from "./run-transcript-redaction";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -57,76 +57,6 @@ const SUMMARY_FIELDS = [
 function isCredentialField(key: string): boolean {
   const segments = key.toLowerCase().split(/[-_\s]+/);
   return segments.some((_, index) => CREDENTIAL_FIELDS.has(segments.slice(index).join("")));
-}
-
-const CREDENTIAL_HEADER =
-  "(?:(?:proxy-)?authorization|(?:set-)?cookie|(?:x-)?api-key|x-(?:auth|access)-token)";
-const CREDENTIAL_HEADER_TEXT = new RegExp(
-  String.raw`(^|[^\w-]|-H)(${CREDENTIAL_HEADER}[ \t]*:)([ \t]*)`,
-  "gim",
-);
-
-type ShellQuote = "" | "'" | '"';
-
-/** Read one shell word without evaluating it. Physical newlines only end
- * unquoted, unescaped words; adjacent quoted/unquoted segments stay together. */
-function scanShellWord(text: string, start: number, initialQuote: ShellQuote) {
-  let quote = initialQuote;
-  let end = start;
-  let escapedWhitespace = false;
-  while (end < text.length) {
-    const char = text[end]!;
-    if (char === "\\" && quote !== "'") {
-      const next = text[end + 1];
-      escapedWhitespace ||= !!next && /\s/.test(next);
-      // Treat CRLF continuations as one escape, just like LF continuations.
-      end += next === "\r" && text[end + 2] === "\n" ? 3 : next ? 2 : 1;
-      continue;
-    }
-    if (quote) {
-      if (char === quote) quote = "";
-    } else if (char === "'" || char === '"') {
-      quote = char;
-    } else if (/[\s;|&<>()]/.test(char)) {
-      break;
-    }
-    end++;
-  }
-  return { end, quote, escapedWhitespace };
-}
-
-function redactRunText(text: string): string {
-  let result = "";
-  let offset = 0;
-  for (const match of text.matchAll(CREDENTIAL_HEADER_TEXT)) {
-    if (match.index < offset) continue;
-    const [, prefix, name, padding] = match;
-    const quote: ShellQuote = prefix === "'" || prefix === '"' ? prefix : "";
-    const nameStart = match.index + prefix.length;
-    const valueStart = nameStart + name.length;
-    const word = scanShellWord(text, valueStart, quote);
-    const beforeName = text.slice(0, nameStart);
-    const headerFlag = prefix === "-H" ||
-      /(?:^|[\s;|&()])(?:-H|--header)(?:=|(?:[ \t]|\\\r?\n)+)$/.test(beforeName);
-    const lineStart = Math.max(beforeName.lastIndexOf("\n"), beforeName.lastIndexOf("\r")) + 1;
-    const bareLine = !beforeName.slice(lineStart).trim();
-    // Quoted headers and -H/--header arguments obey shell word boundaries.
-    // Bare HTTP values extend to the line boundary, including cookie separators.
-    const shellArgument = !!quote || headerFlag || (!bareLine && word.escapedWhitespace);
-    let end = word.end;
-    if (!shellArgument) {
-      end = valueStart;
-      while (end < text.length && text[end] !== "\r" && text[end] !== "\n") end++;
-    }
-    // Apply generic patterns only outside the masked header, so TOKEN patterns
-    // cannot consume its placeholder and closing quote. Restore only the
-    // opening quote retained in the prefix, not quotes inside the secret value.
-    result += redactSecrets(text.slice(offset, match.index));
-    const spacing = shellArgument && !quote ? "" : padding;
-    result += `${prefix}${name}${spacing}[REDACTED]${quote && !word.quote ? quote : ""}`;
-    offset = end;
-  }
-  return result + redactSecrets(text.slice(offset));
 }
 
 function redactInput(value: unknown, key = ""): unknown {

@@ -178,11 +178,53 @@ describe("historical run transcript", () => {
   });
 
   it.each([
-    ["--header", " "], ["--header", "="], ["-H", ""], ["-H", "\\\n"],
-  ])("recognizes the shell header flag %s with separator %j", (flag, separator) => {
+    ["--header", " ", "--header "], ["--header", "=", "--header="],
+    ["-H", "", "-H"], ["-H", "\\\n", "-H"],
+  ])("recognizes the shell header flag %s with separator %j", (flag, separator, safePrefix) => {
     const cmd = `curl ${flag}${separator}Cookie:\\ session=opaque-cookie -H Accept:\\ application/json --verbose`;
-    const expected = `curl ${flag}${separator}Cookie:[REDACTED] -H Accept:\\ application/json --verbose`;
+    const expected = `curl ${safePrefix}Cookie:[REDACTED] -H Accept:\\ application/json --verbose`;
     expect(runToolContext({ ...message(1, "tool_use"), input: { cmd } })).toBe(expected);
+  });
+
+  describe.each(["cmd", "command"])("decoded shell header names in %s", (field) => {
+    const tail = ` -H "Ac""cept: application/json" --verbose https://example.test`;
+    it.each([
+      [`"Auth""orization: Basic opaque-secret"`, `"Authorization: [REDACTED]"`],
+      [`'Auth''orization: Basic opaque-secret'`, `'Authorization: [REDACTED]'`],
+      [`'Authorization'': Basic opaque-secret'`, `'Authorization: [REDACTED]'`],
+      [`"Authorization"": Basic opaque-secret"`, `"Authorization: [REDACTED]"`],
+      [`Auth\\orization:\\ Basic\\ opaque-secret`, `Authorization:[REDACTED]`],
+      [`Authorization\\:\\ Basic\\ opaque-secret`, `Authorization:[REDACTED]`],
+      [`Auth\\\norization:\\ Basic\\ opaque-secret`, `Authorization:[REDACTED]`],
+      [`Authorization\\\n:\\ Basic\\ opaque-secret`, `Authorization:[REDACTED]`],
+      [`Authorization\\\r\n:\\ Basic\\ opaque-secret`, `Authorization:[REDACTED]`],
+      [`"Auth\\\norization: Basic opaque-secret"`, `"Authorization: [REDACTED]"`],
+      [`"Authorization\\\r\n: Basic opaque-secret"`, `"Authorization: [REDACTED]"`],
+      [`"X-API-""Key: opaque-secret"`, `"X-API-Key: [REDACTED]"`],
+      [`Cook\\ie:\\ session=opaque-secret`, `Cookie:[REDACTED]`],
+      [`"Proxy-""Authorization: Basic opaque-secret"`, `"Proxy-Authorization: [REDACTED]"`],
+    ])("redacts the complete decoded parameter and preserves its following arguments: %s", (raw, safe) => {
+      for (const prefix of ["-H ", "-H", "--header=", ""]) {
+        const command = `curl ${prefix}${raw}${tail}`;
+        const expected = `curl ${prefix}${safe}${tail}`;
+        const call = { ...message(1, "tool_use"), input: { [field]: command } };
+        const original = structuredClone(call);
+        const entry = buildRunTranscriptEntries([call])[0];
+        if (entry.kind !== "tool") throw new Error("expected tool");
+        expect(entry.call?.input).toEqual({ [field]: expected });
+        expect(runToolContext(call)).toBe(expected);
+        expect(runEntrySummary(entry)).toBe(expected);
+        expect(JSON.stringify(entry.call?.input)).not.toContain("opaque-secret");
+        expect(buildRunTranscript([entry.call!])[0].input).toEqual(entry.call?.input);
+        expect(call).toEqual(original);
+      }
+    });
+  });
+
+  it("classifies decoded header flags as part of the complete shell parameter", () => {
+    const cmd = `curl "--hea""der=Auth""orization: Basic opaque-secret" '-HCo''okie: session=opaque-cookie' -H "Accept: application/json" --verbose`;
+    expect(runToolContext({ ...message(1, "tool_use"), input: { cmd } }))
+      .toBe(`curl --header="Authorization: [REDACTED]" -H'Cookie: [REDACTED]' -H "Accept: application/json" --verbose`);
   });
 
   it("keeps bare HTTP headers separate from shell words containing escaped spaces", () => {
