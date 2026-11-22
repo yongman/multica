@@ -277,6 +277,21 @@
       "truncated": "此输出在保存时已截断。",
       "diagnostics": "技术详情",
       "show_full_output": "展开完整输出",
+      "show_more": "展开更多",
+      "view_steps": "查看 {{name}} 的执行步骤",
+      "full_log": "打开完整执行记录",
+      "steps_other": "{{count}} 个步骤",
+      "recent_steps": "显示最近 6 个步骤",
+      "waiting_response": "等待智能体响应...",
+      "waiting_result": "等待工具返回结果...",
+      "no_result": "未记录工具返回结果。",
+      "step_status": {
+        "running": "执行中",
+        "completed": "已收到结果",
+        "failed": "运行失败，未记录结果",
+        "cancelled": "运行已取消",
+        "unavailable": "结果不可用"
+      },
       "show_less": "收起"
     },
     "status": {

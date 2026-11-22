@@ -5,17 +5,18 @@
  * the trailing Cancel button is available for every cancellable status,
  * and the status badge / colour swaps based on the AgentTask.status enum.
  *
- * Terminal runs open their persisted execution record. Active rows keep the
- * cancel affordance and are not links: this route is for historical records.
+ * Every run opens its execution record. Cancel remains a separate button.
  */
 import { Pressable, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
 import { router } from "expo-router";
 import type { AgentTask } from "@multica/core/types";
+import { redactSecrets } from "@multica/core/security/redact-secrets";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { RunCancelButton } from "./run-cancel-button";
+import { RunActivity } from "./run-activity";
 import { useActorLookup } from "@/data/use-actor-name";
 import { runFailureBadgeLabel } from "@/lib/run-failure-badge";
 import { timeAgo } from "@/lib/time-ago";
@@ -29,12 +30,6 @@ interface Props {
   issueId: string;
 }
 
-const TERMINAL_STATUSES: readonly AgentTask["status"][] = [
-  "completed",
-  "failed",
-  "cancelled",
-];
-
 export function RunRow({ task, issueId }: Props) {
   const { getName } = useActorLookup();
   const { t } = useT("issues");
@@ -42,9 +37,7 @@ export function RunRow({ task, issueId }: Props) {
   const theme = THEME[colorScheme === "dark" ? "dark" : "light"];
   const workspace = useWorkspaceStore((s) => s.currentWorkspaceSlug);
   const isActive = isCancellableRunStatus(task.status);
-  const isTerminal = TERMINAL_STATUSES.includes(task.status);
-  const summary =
-    task.trigger_summary?.trim() || fallbackSummary(task, t);
+  const summary = redactSecrets(task.trigger_summary?.trim() || fallbackSummary(task, t));
   // Past tasks use completed_at when present (server fills it for terminal
   // statuses); active tasks fall back to created_at so the user sees how
   // long it's been waiting.
@@ -68,8 +61,7 @@ export function RunRow({ task, issueId }: Props) {
           </Text>
         </View>
       </View>
-      {isActive ? <RunCancelButton taskId={task.id} issueId={issueId} /> : null}
-      {isTerminal ? (
+      {workspace ? (
         <Ionicons
           name="chevron-forward"
           size={16}
@@ -79,19 +71,22 @@ export function RunRow({ task, issueId }: Props) {
     </>
   );
 
-  if (!isTerminal || !workspace) {
-    return <View className="flex-row items-start gap-3 py-2">{content}</View>;
-  }
-
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={t("runs.open_transcript", { summary })}
-      onPress={() => router.push(runTranscriptRoute(workspace, issueId, task.id))}
-      className="flex-row items-start gap-3 py-2 active:opacity-60"
-    >
-      {content}
-    </Pressable>
+    <View className="gap-2 py-2">
+      <View className="flex-row items-start gap-3">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("runs.open_transcript", { summary })}
+          disabled={!workspace}
+          onPress={() => { if (workspace) router.push(runTranscriptRoute(workspace, issueId, task.id)); }}
+          className="min-w-0 flex-1 flex-row items-start gap-3 active:opacity-60"
+        >
+          {content}
+        </Pressable>
+        {isActive ? <RunCancelButton taskId={task.id} issueId={issueId} /> : null}
+      </View>
+      {isActive ? <RunActivity task={task} showIdentity={false} /> : null}
+    </View>
   );
 }
 

@@ -5,12 +5,15 @@ import { AgentTaskSchema } from "@/data/schemas";
 import {
   buildRunTranscript,
   buildRunTranscriptEntries,
+  currentRunEntry,
   getRunDiagnostics,
   isCancellableRunStatus,
   isRunTranscriptTaskId,
   RUN_TRANSCRIPT_PATHNAME,
   runTranscriptRoute,
+  runEntrySummary,
   runToolContext,
+  runToolStatus,
 } from "./run-transcript";
 
 describe("run transcript route", () => {
@@ -80,6 +83,71 @@ describe("historical run transcript", () => {
     expect(runToolContext({ ...message(1, "tool_use"), input: { command: "echo Authorization: Bearer fake-value" } }))
       .toBe("echo Authorization: Bearer [REDACTED]");
     expect(runToolContext(undefined)).toBeUndefined();
+  });
+
+  it("summarizes Codex commands, searches and native tool arguments", () => {
+    for (const input of [{ cmd: "pnpm test" }, { query: "streaming" }, { url: "https://example.test" }]) {
+      expect(runToolContext({ ...message(1, "tool_use"), input })).toBe(Object.values(input)[0]);
+    }
+  });
+
+  it("deduplicates repeated frames and never joins prose from different runs", () => {
+    const first = message(1, "text", "first");
+    expect(buildRunTranscript([first, first, { ...message(2, "text", "second"), task_id: "task-2" }])
+      .map((item) => item.content)).toEqual(["first", "second"]);
+  });
+
+  it("redacts nested input values without changing the raw evidence", () => {
+    const input = { password: "secret value with spaces", nested: [{ API_KEY: 12345 }], cmd: "echo Bearer private" };
+    const original = structuredClone(input);
+    const items = buildRunTranscript([{
+      ...message(1, "tool_use"), input,
+    }]);
+    expect(items[0].input).toEqual({
+      password: "[REDACTED]", nested: [{ API_KEY: "[REDACTED]" }], cmd: "echo Bearer [REDACTED]",
+    });
+    expect(input).toEqual(original);
+  });
+
+  it("reuses unchanged redacted bodies but rebuilds coalesced streaming tails", () => {
+    const tool = { ...message(1, "tool_result"), output: "large output" };
+    const text = message(2, "text", "Bearer ");
+    const before = buildRunTranscript([tool, text]);
+    const after = buildRunTranscript([tool, text, message(3, "text", "private-token")]);
+    expect(after[0]).toBe(before[0]);
+    expect(after[1]).not.toBe(before[1]);
+    expect(after[1].content).toBe("Bearer [REDACTED]");
+  });
+
+  it("keeps a parallel pending command current, then retains the latest result", () => {
+    const entries = buildRunTranscriptEntries([
+      { ...message(1, "tool_use"), call_id: "a", input: { cmd: "test a" } },
+      { ...message(2, "tool_use"), call_id: "b", input: { cmd: "test b" } },
+      { ...message(3, "tool_result"), call_id: "b", output: "done" },
+    ]);
+    expect(currentRunEntry(entries)?.seq).toBe(1);
+    expect(runEntrySummary(currentRunEntry(entries)!)).toBe("test a");
+    expect(currentRunEntry([entries[1]])?.seq).toBe(2);
+  });
+
+  it("redacts the complete command before clipping the activity summary", () => {
+    const entry = buildRunTranscriptEntries([{
+      ...message(1, "tool_use"),
+      input: { cmd: `${"x".repeat(220)} Authorization: Bearer private-token-with-long-tail` },
+    }])[0];
+    expect(runEntrySummary(entry)).not.toContain("private");
+    expect(runEntrySummary(entry).length).toBeLessThanOrEqual(240);
+  });
+
+  it.each([
+    ["queued", "running"], ["dispatched", "running"], ["running", "running"],
+    ["deferred", "running"], ["waiting_local_directory", "running"],
+    ["completed", "unavailable"], ["failed", "failed"], ["cancelled", "cancelled"],
+  ] as const)("shows an unfinished tool honestly when its run is %s", (status, expected) => {
+    const entry = buildRunTranscriptEntries([message(1, "tool_use")])[0];
+    if (entry.kind !== "tool") throw new Error("expected tool");
+    expect(runToolStatus(entry, status)).toBe(expected);
+    expect(runToolStatus({ ...entry, result: message(2, "tool_result") }, status)).toBe("completed");
   });
 
   it("sorts and joins streamed Markdown without changing the source messages", () => {

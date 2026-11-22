@@ -3,6 +3,7 @@ import type {
   CommentDeletedPayload,
   CommentUpdatedPayload,
   Issue,
+  TaskMessagePayload,
 } from "@multica/core/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -113,6 +114,22 @@ describe("useIssueRealtime owner issue revision on comment deletes", () => {
     emit("issue:updated", { issue: { id: "unrelated" } });
     expect(state.qc.getQueryState(childrenKey)?.isInvalidated).toBe(false);
   });
+
+  it.each(["task:running", "task:waiting_local_directory"])(
+    "refreshes run status on %s without reacting to another issue", (event) => {
+      useIssueRealtime(issueId);
+      const emit = connect();
+      const activeKey = issueKeys.activeTasks(wsId, issueId);
+      const tasksKey = issueKeys.tasks(wsId, issueId);
+      state.qc.setQueryData(activeKey, []);
+      state.qc.setQueryData(tasksKey, []);
+      emit(event, { issue_id: "another-issue", task_id: "task-1" });
+      expect(state.qc.getQueryState(activeKey)?.isInvalidated).toBe(false);
+      emit(event, { issue_id: issueId, task_id: "task-1" } satisfies Pick<TaskMessagePayload, "issue_id" | "task_id">);
+      expect(state.qc.getQueryState(activeKey)?.isInvalidated).toBe(true);
+      expect(state.qc.getQueryState(tasksKey)?.isInvalidated).toBe(true);
+    },
+  );
 
   it.each([
     ["comment:deleted", deletedPayload],

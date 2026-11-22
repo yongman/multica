@@ -281,6 +281,22 @@
       "truncated": "This output was truncated when saved.",
       "diagnostics": "Technical details",
       "show_full_output": "Show full output",
+      "show_more": "Show more",
+      "view_steps": "View execution steps for {{name}}",
+      "full_log": "Open full execution record",
+      "steps_one": "{{count}} step",
+      "steps_other": "{{count}} steps",
+      "recent_steps": "Showing the latest 6 steps",
+      "waiting_response": "Waiting for agent response...",
+      "waiting_result": "Waiting for tool result...",
+      "no_result": "No tool result was recorded.",
+      "step_status": {
+        "running": "In progress",
+        "completed": "Result received",
+        "failed": "Run failed before a result was recorded",
+        "cancelled": "Run cancelled",
+        "unavailable": "Result unavailable"
+      },
       "show_less": "Show less"
     },
     "status": {

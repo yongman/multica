@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/collapsible";
 import { Markdown } from "@/lib/markdown";
 import { useT } from "@/lib/i18n";
-import { buildRunTranscriptEntries, getRunDiagnostics, runToolContext } from "@/lib/run-transcript";
+import { buildRunTranscriptEntries, getRunDiagnostics, runToolContext, runToolStatus } from "@/lib/run-transcript";
 import type { RunTranscriptEntry } from "@/lib/run-transcript";
 import { THEME } from "@/lib/theme";
 
@@ -36,8 +36,8 @@ export function RunTranscript({
       className="flex-1"
       contentContainerClassName="px-4 py-4"
       data={timeline}
-      keyExtractor={(item, index) => `${item.task_id}-${item.seq}-${index}`}
-      renderItem={({ item }) => <TranscriptEntry item={item} />}
+      keyExtractor={(item) => `${item.task_id}-${item.seq}`}
+      renderItem={({ item }) => <TranscriptEntry item={item} status={task.status} />}
       ItemSeparatorComponent={EntrySeparator}
       ListHeaderComponent={
         <View className="mb-4 gap-4">
@@ -56,9 +56,7 @@ export function RunTranscript({
                   <Text className="text-xs font-medium text-muted-foreground">
                     {t("runs.transcript.diagnostics")}
                   </Text>
-                  <Text selectable className="font-mono text-xs text-foreground">
-                    {diagnostics.error}
-                  </Text>
+                  <ClippedContent content={diagnostics.error} />
                 </View>
               ) : null}
             </View>
@@ -82,24 +80,20 @@ function EntrySeparator() {
   return <View className="h-2" />;
 }
 
-function TranscriptEntry({ item: entry }: { item: RunTranscriptEntry }) {
-  if (entry.kind === "tool") return <ToolEntry call={entry.call} result={entry.result} />;
+export function TranscriptEntry({ item: entry, status }: { item: RunTranscriptEntry; status: AgentTask["status"] }) {
+  if (entry.kind === "tool") return <ToolEntry entry={entry} status={status} />;
   const item = entry.message;
   switch (item.type) {
     case "thinking":
       return (
         <EntryCard icon="bulb-outline" labelKey="thinking" collapsible>
-          <Text selectable className="text-sm italic text-muted-foreground">
-            {item.content || "—"}
-          </Text>
+          <ClippedContent content={item.content || "—"} />
         </EntryCard>
       );
     case "error":
       return (
         <EntryCard icon="alert-circle-outline" labelKey="error" destructive>
-          <Text selectable className="text-sm text-destructive">
-            {item.content || "—"}
-          </Text>
+          <ClippedContent content={item.content || "—"} />
         </EntryCard>
       );
     case "text":
@@ -107,7 +101,7 @@ function TranscriptEntry({ item: entry }: { item: RunTranscriptEntry }) {
       return (
         <EntryCard icon="chatbubble-ellipses-outline" labelKey="output">
           {item.content ? (
-            <Markdown content={item.content} />
+            <ClippedContent content={item.content} markdown />
           ) : (
             <Text className="text-sm text-muted-foreground">—</Text>
           )}
@@ -116,8 +110,10 @@ function TranscriptEntry({ item: entry }: { item: RunTranscriptEntry }) {
   }
 }
 
-function ToolEntry({ call, result }: { call?: TaskMessagePayload; result?: TaskMessagePayload }) {
+function ToolEntry({ entry, status }: { entry: Extract<RunTranscriptEntry, { kind: "tool" }>; status: AgentTask["status"] }) {
   const { t } = useT("issues");
+  const { call, result } = entry;
+  const state = runToolStatus(entry, status);
   const input =
     call?.input && Object.keys(call.input).length > 0
       ? redactSecrets(JSON.stringify(call.input, null, 2))
@@ -127,20 +123,25 @@ function ToolEntry({ call, result }: { call?: TaskMessagePayload; result?: TaskM
 
   return (
     <EntryCard
-      icon={call ? "construct-outline" : "terminal-outline"}
+      icon={state === "completed" ? "checkmark-circle-outline" : "terminal-outline"}
       labelKey={call ? "tool_call" : "tool_output"}
       detail={detail}
+      stateLabel={t(`runs.transcript.step_status.${state}`)}
+      destructive={state === "failed"}
       collapsible
     >
       <View className="gap-2">
         {call ? (
           <View className="rounded-md bg-muted px-3 py-2">
-            <Text selectable className="font-mono text-xs text-muted-foreground">
-              {input}
-            </Text>
+            <ClippedContent content={input} />
           </View>
         ) : null}
         {result ? <ToolResultContent item={result} /> : null}
+        {!result ? (
+          <Text className="text-xs text-muted-foreground">
+            {t(state === "running" ? "runs.transcript.waiting_result" : "runs.transcript.no_result")}
+          </Text>
+        ) : null}
       </View>
     </EntryCard>
   );
@@ -148,34 +149,14 @@ function ToolEntry({ call, result }: { call?: TaskMessagePayload; result?: TaskM
 
 function ToolResultContent({ item }: { item: TaskMessagePayload }) {
   const { t } = useT("issues");
-  const [showFullOutput, setShowFullOutput] = useState(false);
-  const output = item.output ?? "";
-  const clipped = output.length > DISPLAY_CLIP_CHARS;
-  const shown = clipped && !showFullOutput
-    ? `${output.slice(0, DISPLAY_CLIP_CHARS)}...`
-    : output;
-
   return (
     <View className="gap-2">
       <Text className="text-xs font-medium text-muted-foreground">
         {t("runs.transcript.tool_output")}
       </Text>
       <View className="rounded-md bg-muted px-3 py-2">
-        <Text selectable className="font-mono text-xs text-muted-foreground">
-          {shown || "—"}
-        </Text>
+        <ClippedContent content={item.output || "—"} />
       </View>
-      {clipped ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setShowFullOutput(!showFullOutput)}
-          className="mt-2 py-1"
-        >
-          <Text className="text-sm text-brand">
-            {t(showFullOutput ? "runs.transcript.show_less" : "runs.transcript.show_full_output")}
-          </Text>
-        </Pressable>
-      ) : null}
       {item.output_truncated === true ? (
         <Text className="mt-2 text-xs text-muted-foreground">
           {t("runs.transcript.truncated")}
@@ -185,10 +166,42 @@ function ToolResultContent({ item }: { item: TaskMessagePayload }) {
   );
 }
 
+function ClippedContent({ content, markdown = false }: { content: string; markdown?: boolean }) {
+  const { t } = useT("issues");
+  const [showFullOutput, setShowFullOutput] = useState(false);
+  const output = redactSecrets(content);
+  const clipped = output.length > DISPLAY_CLIP_CHARS;
+  const shown = clipped && !showFullOutput
+    ? `${output.slice(0, DISPLAY_CLIP_CHARS)}...`
+    : output;
+
+  return (
+    <View className="gap-2">
+      {markdown ? <Markdown content={shown} /> : (
+        <Text selectable className="font-mono text-xs text-muted-foreground">
+          {shown || "—"}
+        </Text>
+      )}
+      {clipped ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setShowFullOutput(!showFullOutput)}
+          className="mt-2 py-1"
+        >
+          <Text className="text-sm text-brand">
+            {t(showFullOutput ? "runs.transcript.show_less" : "runs.transcript.show_more")}
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 function EntryCard({
   icon,
   labelKey,
   detail,
+  stateLabel,
   destructive = false,
   collapsible = false,
   children,
@@ -196,6 +209,7 @@ function EntryCard({
   icon: React.ComponentProps<typeof Ionicons>["name"];
   labelKey: "thinking" | "error" | "output" | "tool_call" | "tool_output";
   detail?: string;
+  stateLabel?: string;
   destructive?: boolean;
   collapsible?: boolean;
   children: React.ReactNode;
@@ -210,9 +224,12 @@ function EntryCard({
   const heading = (
     <>
       <Ionicons name={icon} size={14} color={destructive ? theme.destructive : theme.mutedForeground} />
-      <Text numberOfLines={2} className={`flex-1 text-xs font-medium ${destructive ? "text-destructive" : "text-muted-foreground"}`}>
-        {t(`runs.transcript.${labelKey}`)}{detail ? ` · ${detail}` : ""}
-      </Text>
+      <View className="min-w-0 flex-1 gap-1">
+        <Text numberOfLines={2} className={`text-xs font-medium ${destructive ? "text-destructive" : "text-muted-foreground"}`}>
+          {t(`runs.transcript.${labelKey}`)}{detail ? ` · ${detail.slice(0, 320)}` : ""}
+        </Text>
+        {stateLabel ? <Text className="text-xs text-muted-foreground">{stateLabel}</Text> : null}
+      </View>
     </>
   );
 

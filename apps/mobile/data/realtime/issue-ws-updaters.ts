@@ -199,6 +199,20 @@ export function clearIssueDetail(
   qc.removeQueries({ queryKey: issueKeys.timeline(wsId, issueId) });
 }
 
+/** A lifecycle event must not reuse a first load that captured the old status. */
+export function refreshIssueTasks(qc: QueryClient, wsId: string | null, issueId: string) {
+  return Promise.all([
+    issueKeys.activeTasks(wsId, issueId),
+    issueKeys.tasks(wsId, issueId),
+  ].map((queryKey) => {
+    if (qc.getQueryState(queryKey)?.fetchStatus === "fetching") {
+      return qc.cancelQueries({ queryKey }, { revert: false, silent: true })
+        .then(() => qc.invalidateQueries({ queryKey }));
+    }
+    return qc.invalidateQueries({ queryKey });
+  }));
+}
+
 export function invalidateIssueAfterReconnect(
   qc: QueryClient,
   wsId: string,
@@ -207,8 +221,7 @@ export function invalidateIssueAfterReconnect(
   qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issueId) });
   qc.invalidateQueries({ queryKey: issueKeys.timeline(wsId, issueId) });
   qc.invalidateQueries({ queryKey: issueKeys.attachments(wsId, issueId) });
-  qc.invalidateQueries({ queryKey: issueKeys.activeTasks(wsId, issueId) });
-  qc.invalidateQueries({ queryKey: issueKeys.tasks(wsId, issueId) });
+  void refreshIssueTasks(qc, wsId, issueId);
 }
 
 // Issue timeline (flat TimelineEntry[], ASC oldest-first)

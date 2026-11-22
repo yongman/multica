@@ -55,6 +55,7 @@ import {
   removeCommentReaction,
   removeFromMyIssuesList,
   removeIssueReaction,
+  refreshIssueTasks,
 } from "./issue-ws-updaters";
 
 type TaskEventPayload =
@@ -92,8 +93,7 @@ export function useIssueRealtime(
       // apps/mobile/CLAUDE.md "Patch over invalidate" rule #1 (payload is
       // just an id), invalidate is the correct primitive.
       const invalidateTaskQueries = () => {
-        qc.invalidateQueries({ queryKey: issueKeys.activeTasks(wsId, issueId) });
-        qc.invalidateQueries({ queryKey: issueKeys.tasks(wsId, issueId) });
+        void refreshIssueTasks(qc, wsId, issueId);
       };
 
       // Shared cross-event handler for the 6 task:* subscriptions below.
@@ -251,6 +251,8 @@ export function useIssueRealtime(
         ws.on("task:queued", onTaskStateEvent),
         ws.on("task:coalesced", onTaskStateEvent),
         ws.on("task:dispatch", onTaskStateEvent),
+        ws.on("task:running", onTaskStateEvent),
+        ws.on("task:waiting_local_directory", onTaskStateEvent),
         ws.on("task:progress", onTaskEvent),
         ws.on("task:completed", onTaskStateEvent),
         ws.on("task:failed", onTaskStateEvent),
