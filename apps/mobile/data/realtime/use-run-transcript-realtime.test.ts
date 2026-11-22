@@ -188,13 +188,15 @@ describe("run transcript cache lifecycle", () => {
   });
 
   it.each(["task:queued", "task:coalesced", "task:dispatch", "task:running", "task:waiting_local_directory"])(
-    "refreshes both run lists on %s without reloading the transcript", (event) => {
+    "refreshes both run lists on %s without reloading the transcript", async (event) => {
       const activeKey = issueKeys.activeTasks(wsId, issueId);
       state.qc.setQueryData(activeKey, []);
       const ws = connect();
       ws.emit(event, { task_id: taskId, issue_id: issueId });
-      expect(state.qc.getQueryState(tasksKey)?.isInvalidated).toBe(true);
-      expect(state.qc.getQueryState(activeKey)?.isInvalidated).toBe(true);
+      await vi.waitFor(() => {
+        expect(state.qc.getQueryState(tasksKey)?.isInvalidated).toBe(true);
+        expect(state.qc.getQueryState(activeKey)?.isInvalidated).toBe(true);
+      });
       expect(api.listTaskMessages).not.toHaveBeenCalled();
     },
   );

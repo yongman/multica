@@ -38,17 +38,43 @@ const builtRuns = new WeakMap<
   { members: readonly TaskMessagePayload[]; message: TaskMessagePayload }
 >();
 
+// Exact normalized names keep credentials hidden without treating file keys,
+// token counts or secret resource names as credential values.
+const CREDENTIAL_FIELDS = new Set([
+  "authorization", "proxyauthorization", "cookie", "setcookie",
+  "apikey", "xapikey", "apisecret", "secret", "secretkey",
+  "token", "accesstoken", "authtoken", "refreshtoken", "idtoken", "xauthtoken", "xaccesstoken",
+  "password", "passwd", "dbpassword", "privatekey", "clientsecret",
+  "credential", "credentials", "awssecretaccesskey", "secretaccesskey",
+  "databaseurl", "dburl", "redisurl",
+]);
+
+const SUMMARY_FIELDS = [
+  "command", "cmd", "file_path", "path", "pattern",
+  "query", "description", "prompt", "skill",
+] as const;
+
+function isCredentialField(key: string): boolean {
+  return CREDENTIAL_FIELDS.has(key.replace(/[-_\s]/g, "").toLowerCase());
+}
+
 function redactInput(value: unknown, key = ""): unknown {
-  // JSON's quoted keys bypass the key=value rules in redactSecrets. Probe the
-  // key separately so whitespace or non-string secret values cannot leak.
-  const probe = `${key}=redaction-probe`;
-  if (key && redactSecrets(probe) !== probe) return "[REDACTED]";
+  if (isCredentialField(key)) return "[REDACTED]";
   if (typeof value === "string") {
     return redactSecrets(value);
   }
-  if (Array.isArray(value)) return value.map((item) => redactInput(item, key));
+  if (Array.isArray(value)) {
+    if (key.toLowerCase() === "headers" && typeof value[0] === "string" && isCredentialField(value[0])) {
+      return value.map((item, index) => index === 0 ? item : "[REDACTED]");
+    }
+    return value.map((item) => redactInput(item, key));
+  }
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, redactInput(item, name)]));
+    const headerName = key.toLowerCase() === "headers" && "name" in value ? value.name : undefined;
+    const credentialHeader = typeof headerName === "string" && isCredentialField(headerName);
+    return Object.fromEntries(Object.entries(value).map(([name, item]) => [
+      name, credentialHeader && name === "value" ? "[REDACTED]" : redactInput(item, name),
+    ]));
   }
   return value;
 }
@@ -106,23 +132,39 @@ export type RunTranscriptEntry =
   | { kind: "message"; task_id: string; seq: number; message: TaskMessagePayload }
   | { kind: "tool"; task_id: string; seq: number; call?: TaskMessagePayload; result?: TaskMessagePayload };
 
-/** Pair by opaque identity, never by completion order or a shared tool name. */
+/** Identified calls pair by ID; legacy calls pair only without overlap. */
 export function buildRunTranscriptEntries(messages: readonly TaskMessagePayload[]): RunTranscriptEntry[] {
   const entries: RunTranscriptEntry[] = [];
   const pending = new Map<string, Extract<RunTranscriptEntry, { kind: "tool" }>>();
+  const legacy = new Map<string, {
+    candidate?: Extract<RunTranscriptEntry, { kind: "tool" }>;
+    remaining: number;
+  }>();
 
   for (const message of buildRunTranscript(messages)) {
-    // Missing IDs stay unpaired rather than guessing which parallel call won.
     const key = message.call_id ? `${message.task_id}:${message.call_id}` : null;
+    const legacyKey = !key && message.tool ? `${message.task_id}:${message.tool}` : null;
     if (message.type === "tool_use") {
       const entry = { kind: "tool" as const, task_id: message.task_id, seq: message.seq, call: message };
       entries.push(entry);
       if (key) pending.set(key, entry);
+      else if (legacyKey) {
+        const bucket = legacy.get(legacyKey);
+        if (bucket) {
+          // Once calls overlap, no result can identify which one finished.
+          bucket.candidate = undefined;
+          bucket.remaining++;
+        } else {
+          legacy.set(legacyKey, { candidate: entry, remaining: 1 });
+        }
+      }
     } else if (message.type === "tool_result") {
-      const call = key ? pending.get(key) : undefined;
-      if (call && key) {
+      const bucket = legacyKey ? legacy.get(legacyKey) : undefined;
+      const call = key ? pending.get(key) : bucket?.candidate;
+      if (bucket && legacyKey && --bucket.remaining === 0) legacy.delete(legacyKey);
+      if (call) {
         call.result = message;
-        pending.delete(key);
+        if (key) pending.delete(key);
       } else {
         entries.push({ kind: "tool", task_id: message.task_id, seq: message.seq, result: message });
       }
@@ -136,11 +178,8 @@ export function buildRunTranscriptEntries(messages: readonly TaskMessagePayload[
 export function runToolContext(call: TaskMessagePayload | undefined): string | undefined {
   const input = call?.input ? redactInput(call.input) as Record<string, unknown> : undefined;
   if (!input) return undefined;
-  const context = [
-    input.command, input.cmd, input.file_path, input.path, input.pattern,
-    input.query, input.description, input.prompt, input.skill, ...Object.values(input),
-  ].find((value): value is string => typeof value === "string" && value.trim().length > 0);
-  return context;
+  return SUMMARY_FIELDS.map((name) => input[name])
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
 }
 
 export function runEntrySummary(entry: RunTranscriptEntry): string {
@@ -151,9 +190,9 @@ export function runEntrySummary(entry: RunTranscriptEntry): string {
   return redactSecrets(text).replace(/\s+/g, " ").trim().slice(0, 240);
 }
 
-/** An unfinished call stays current even when a parallel call returns later. */
+/** Only identified unfinished calls can outrank newer activity. */
 export function currentRunEntry(entries: readonly RunTranscriptEntry[]): RunTranscriptEntry | undefined {
-  return entries.findLast((entry) => entry.kind === "tool" && !entry.result)
+  return entries.findLast((entry) => entry.kind === "tool" && entry.call?.call_id && !entry.result)
     ?? entries.findLast((entry) => entry.kind === "tool" || entry.message.content?.trim());
 }
 
@@ -162,6 +201,7 @@ export function runToolStatus(
   status: AgentTask["status"],
 ): "completed" | "running" | "failed" | "cancelled" | "unavailable" {
   if (entry.result) return "completed";
+  if (!entry.call?.call_id) return "unavailable";
   if (isCancellableRunStatus(status)) return "running";
   if (status === "failed" || status === "cancelled") return status;
   // A successful run is not evidence that an unrecorded result succeeded.

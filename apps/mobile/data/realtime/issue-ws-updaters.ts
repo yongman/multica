@@ -15,6 +15,7 @@ import type {
   TimelineEntry,
 } from "@multica/core/types";
 import { issueKeys } from "@/data/queries/issue-keys";
+import { refreshQuery } from "./query-refresh";
 
 type TimelinePredicate = (entry: TimelineEntry) => boolean;
 type TimelineMutate = (entry: TimelineEntry) => TimelineEntry;
@@ -204,13 +205,7 @@ export function refreshIssueTasks(qc: QueryClient, wsId: string | null, issueId:
   return Promise.all([
     issueKeys.activeTasks(wsId, issueId),
     issueKeys.tasks(wsId, issueId),
-  ].map((queryKey) => {
-    if (qc.getQueryState(queryKey)?.fetchStatus === "fetching") {
-      return qc.cancelQueries({ queryKey }, { revert: false, silent: true })
-        .then(() => qc.invalidateQueries({ queryKey }));
-    }
-    return qc.invalidateQueries({ queryKey });
-  }));
+  ].map((queryKey) => refreshQuery(qc, queryKey)));
 }
 
 export function invalidateIssueAfterReconnect(
@@ -218,9 +213,9 @@ export function invalidateIssueAfterReconnect(
   wsId: string,
   issueId: string,
 ) {
-  qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issueId) });
-  qc.invalidateQueries({ queryKey: issueKeys.timeline(wsId, issueId) });
-  qc.invalidateQueries({ queryKey: issueKeys.attachments(wsId, issueId) });
+  void refreshQuery(qc, issueKeys.detail(wsId, issueId));
+  void refreshQuery(qc, issueKeys.timeline(wsId, issueId));
+  void refreshQuery(qc, issueKeys.attachments(wsId, issueId));
   void refreshIssueTasks(qc, wsId, issueId);
 }
 

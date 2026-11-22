@@ -94,7 +94,7 @@ describe("useIssueRealtime owner issue revision on comment deletes", () => {
     state.subscriptionSetups.length = 0;
   });
 
-  it("refreshes children for creation, status changes, reparenting, deletion and task changes", () => {
+  it("refreshes children for creation, status changes, reparenting, deletion and task changes", async () => {
     const childrenKey = issueKeys.children(wsId, issueId);
     const child = { id: "child-1", parent_issue_id: issueId } as Issue;
     useIssueRealtime(issueId);
@@ -108,7 +108,7 @@ describe("useIssueRealtime owner issue revision on comment deletes", () => {
     ] as const) {
       state.qc.setQueryData(childrenKey, [child]);
       emit(event, payload);
-      expect(state.qc.getQueryState(childrenKey)?.isInvalidated, event).toBe(true);
+      await vi.waitFor(() => expect(state.qc.getQueryState(childrenKey)?.isInvalidated, event).toBe(true));
     }
     state.qc.setQueryData(childrenKey, [child]);
     emit("issue:updated", { issue: { id: "unrelated" } });
@@ -116,7 +116,7 @@ describe("useIssueRealtime owner issue revision on comment deletes", () => {
   });
 
   it.each(["task:running", "task:waiting_local_directory"])(
-    "refreshes run status on %s without reacting to another issue", (event) => {
+    "refreshes run status on %s without reacting to another issue", async (event) => {
       useIssueRealtime(issueId);
       const emit = connect();
       const activeKey = issueKeys.activeTasks(wsId, issueId);
@@ -126,8 +126,10 @@ describe("useIssueRealtime owner issue revision on comment deletes", () => {
       emit(event, { issue_id: "another-issue", task_id: "task-1" });
       expect(state.qc.getQueryState(activeKey)?.isInvalidated).toBe(false);
       emit(event, { issue_id: issueId, task_id: "task-1" } satisfies Pick<TaskMessagePayload, "issue_id" | "task_id">);
-      expect(state.qc.getQueryState(activeKey)?.isInvalidated).toBe(true);
-      expect(state.qc.getQueryState(tasksKey)?.isInvalidated).toBe(true);
+      await vi.waitFor(() => {
+        expect(state.qc.getQueryState(activeKey)?.isInvalidated).toBe(true);
+        expect(state.qc.getQueryState(tasksKey)?.isInvalidated).toBe(true);
+      });
     },
   );
 

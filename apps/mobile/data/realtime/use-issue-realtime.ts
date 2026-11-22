@@ -37,6 +37,7 @@ import type {
 } from "@multica/core/types";
 import { issueKeys } from "@/data/queries/issue-keys";
 import { useWSSubscriptions } from "@/lib/use-ws-subscriptions";
+import { refreshQuery } from "./query-refresh";
 import {
   addCommentReaction,
   addIssueReaction,
@@ -82,8 +83,8 @@ export function useIssueRealtime(
         qc.getQueryData<Issue[]>(childrenKey)?.some((child) => child.id === id) ?? false;
 
       const invalidateThisIssue = () => {
-        qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issueId) });
-        qc.invalidateQueries({ queryKey: issueKeys.timeline(wsId, issueId) });
+        void refreshQuery(qc, issueKeys.detail(wsId, issueId));
+        void refreshQuery(qc, issueKeys.timeline(wsId, issueId));
       };
 
       // Task-query invalidation — separate from detail/timeline so the
@@ -108,7 +109,7 @@ export function useIssueRealtime(
         invalidateTaskQueries();
       };
       const onTaskStateEvent = (p: unknown) => {
-        if (isLoadedChild((p as TaskEventPayload).issue_id)) invalidateChildren();
+        if (isLoadedChild((p as TaskEventPayload).issue_id)) void refreshQuery(qc, childrenKey);
         onTaskEvent(p);
       };
 
@@ -261,7 +262,7 @@ export function useIssueRealtime(
         // ----- Reconnect -----
         ws.onReconnect(() => {
           invalidateIssueAfterReconnect(qc, wsId, issueId);
-          invalidateChildren();
+          void refreshQuery(qc, childrenKey);
         }),
       ];
     },

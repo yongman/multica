@@ -86,9 +86,140 @@ describe("historical run transcript", () => {
   });
 
   it("summarizes Codex commands, searches and native tool arguments", () => {
-    for (const input of [{ cmd: "pnpm test" }, { query: "streaming" }, { url: "https://example.test" }]) {
+    for (const input of [{ cmd: "pnpm test" }, { query: "streaming" }, { file_path: "src/main.ts" }]) {
       expect(runToolContext({ ...message(1, "tool_use"), input })).toBe(Object.values(input)[0]);
     }
+  });
+
+  it("redacts nested credential headers and opaque credentials without hiding ordinary keys", () => {
+    const input = {
+      apiKey: "opaque-key",
+      credentials: { username: "user", password: "opaque-password" },
+      request: [{
+        headers: {
+          Authorization: "Basic dXNlcjpwYXNz",
+          "pRoXy-AuThOrIzAtIoN": "Basic cHJveHk6cGFzcw==",
+          Cookie: "session=opaque-cookie",
+          "Set-Cookie": ["session=opaque-set-cookie"],
+          "X-API-Key": "opaque-header-key",
+          "Content-Type": "application/json",
+        },
+      }],
+      token_count: 256,
+      file_key: "docs/readme",
+      secret_name: "deployment-secret",
+    };
+    const original = structuredClone(input);
+    const sanitized = buildRunTranscript([{ ...message(1, "tool_use"), input }])[0].input;
+    expect(sanitized).toEqual({
+      apiKey: "[REDACTED]",
+      credentials: "[REDACTED]",
+      request: [{
+        headers: {
+          Authorization: "[REDACTED]",
+          "pRoXy-AuThOrIzAtIoN": "[REDACTED]",
+          Cookie: "[REDACTED]",
+          "Set-Cookie": "[REDACTED]",
+          "X-API-Key": "[REDACTED]",
+          "Content-Type": "application/json",
+        },
+      }],
+      token_count: 256,
+      file_key: "docs/readme",
+      secret_name: "deployment-secret",
+    });
+    expect(input).toEqual(original);
+  });
+
+  it.each(["apiKey", "Authorization", "Cookie", "access_token", "unrecognized_parameter"])(
+    "never chooses %s as an arbitrary collapsed summary", (name) => {
+      const call = { ...message(1, "tool_use"), tool: "http_request", input: { [name]: "opaque-credential" } };
+      expect(runToolContext(call)).toBeUndefined();
+      expect(runEntrySummary(buildRunTranscriptEntries([call])[0])).toBe("http_request");
+      expect(runToolContext({ ...call, input: { ...call.input, description: "Inspect response" } }))
+        .toBe("Inspect response");
+    },
+  );
+
+  it("redacts header tuples and named entries while preserving non-credential headers", () => {
+    const input = {
+      headers: [
+        ["Authorization", "Basic dXNlcjpwYXNz"],
+        ["X-API-Key", "opaque-api-key"],
+        ["Content-Type", "application/json"],
+        { name: "Cookie", value: "session=opaque-cookie" },
+        { name: "Accept", value: "application/json" },
+      ],
+    };
+    expect(buildRunTranscript([{ ...message(1, "tool_use"), input }])[0].input).toEqual({
+      headers: [
+        ["Authorization", "[REDACTED]"],
+        ["X-API-Key", "[REDACTED]"],
+        ["Content-Type", "application/json"],
+        { name: "Cookie", value: "[REDACTED]" },
+        { name: "Accept", value: "application/json" },
+      ],
+    });
+  });
+
+  it("pairs sequential legacy calls with results and advances to later text", () => {
+    const entries = buildRunTranscriptEntries([
+      { ...message(1, "tool_use"), tool: "Bash", input: { command: "old command" } },
+      { ...message(2, "tool_result"), tool: "Bash", output: "done" },
+      message(3, "text", "Now checking the next change"),
+      { ...message(4, "tool_use"), tool: "Bash", input: { command: "next command" } },
+      { ...message(5, "tool_result"), tool: "Bash", output: "done again" },
+      message(6, "text", "Ready for review"),
+    ]);
+    expect(entries).toHaveLength(4);
+    expect(entries[0]).toMatchObject({ kind: "tool", seq: 1, result: { seq: 2 } });
+    expect(entries[2]).toMatchObject({ kind: "tool", seq: 4, result: { seq: 5 } });
+    expect(runEntrySummary(currentRunEntry(entries)!)).toBe("Ready for review");
+  });
+
+  it("keeps ambiguous legacy calls independent and never promotes them over newer activity", () => {
+    const entries = buildRunTranscriptEntries([
+      { ...message(1, "tool_use"), tool: "Bash", input: { command: "parallel a" } },
+      { ...message(2, "tool_use"), tool: "Bash", input: { command: "parallel b" } },
+      { ...message(3, "tool_result"), tool: "Bash", output: "one result" },
+      { ...message(4, "tool_result"), tool: "Bash", output: "other result" },
+      { ...message(5, "tool_use"), tool: "Bash", input: { command: "later command" } },
+      { ...message(6, "tool_result"), tool: "Bash", output: "later result" },
+      message(7, "thinking", "Planning the next step"),
+    ]);
+    expect(entries).toHaveLength(6);
+    for (const entry of entries.slice(0, 2)) {
+      if (entry.kind !== "tool") throw new Error("expected tool");
+      expect(entry.result).toBeUndefined();
+      expect(runToolStatus(entry, "running")).toBe("unavailable");
+    }
+    expect(entries[4]).toMatchObject({ kind: "tool", seq: 5, result: { seq: 6 } });
+    expect(runEntrySummary(currentRunEntry(entries)!)).toBe("Planning the next step");
+  });
+
+  it("does not mix identified calls, unnamed tools, or legacy calls from different runs", () => {
+    const entries = buildRunTranscriptEntries([
+      { ...message(1, "tool_use"), tool: "Read", call_id: "known" },
+      { ...message(2, "tool_result"), tool: "Read" },
+      message(3, "tool_use"),
+      message(4, "tool_result"),
+      { ...message(5, "tool_use"), tool: "Bash" },
+      { ...message(6, "tool_result"), task_id: "task-2", tool: "Bash" },
+    ]);
+    expect(entries).toHaveLength(6);
+    expect(entries.slice(0, 5).filter((entry) => entry.kind === "tool" && entry.result && entry.call)).toHaveLength(0);
+    expect(currentRunEntry(entries)?.seq).toBe(1);
+  });
+
+  it("shows an unmatched legacy call as unknown while allowing newer prose to become current", () => {
+    const entries = buildRunTranscriptEntries([
+      { ...message(1, "tool_use"), tool: "Bash", input: { command: "old command" } },
+      message(2, "text", "Working on something newer"),
+    ]);
+    const call = entries[0];
+    if (call.kind !== "tool") throw new Error("expected tool");
+    expect(runToolStatus(call, "running")).toBe("unavailable");
+    expect(currentRunEntry(entries)?.seq).toBe(2);
   });
 
   it("deduplicates repeated frames and never joins prose from different runs", () => {
@@ -144,7 +275,7 @@ describe("historical run transcript", () => {
     ["deferred", "running"], ["waiting_local_directory", "running"],
     ["completed", "unavailable"], ["failed", "failed"], ["cancelled", "cancelled"],
   ] as const)("shows an unfinished tool honestly when its run is %s", (status, expected) => {
-    const entry = buildRunTranscriptEntries([message(1, "tool_use")])[0];
+    const entry = buildRunTranscriptEntries([{ ...message(1, "tool_use"), call_id: "pending" }])[0];
     if (entry.kind !== "tool") throw new Error("expected tool");
     expect(runToolStatus(entry, status)).toBe(expected);
     expect(runToolStatus({ ...entry, result: message(2, "tool_result") }, status)).toBe("completed");

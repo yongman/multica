@@ -37,6 +37,7 @@ import type {
   TaskDispatchPayload,
 } from "@multica/core/types";
 import { chatKeys } from "@/data/queries/chat";
+import { refreshQuery } from "./query-refresh";
 
 // Sessions list (ChatSession[] keyed by wsId)
 
@@ -402,10 +403,6 @@ export function appendTaskMessages(
   );
 }
 
-export async function refreshTaskMessages(qc: QueryClient, taskId: string) {
-  const queryKey = chatKeys.taskMessages(taskId);
-  // Invalidation alone reuses an unfinished first load. Cancel it first,
-  // retaining any WS rows received since it began instead of reverting them.
-  await qc.cancelQueries({ queryKey }, { revert: false, silent: true });
-  await qc.invalidateQueries({ queryKey });
+export function refreshTaskMessages(qc: QueryClient, taskId: string) {
+  return refreshQuery(qc, chatKeys.taskMessages(taskId));
 }
