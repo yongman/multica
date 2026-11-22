@@ -138,8 +138,16 @@ upgrade because newly-added color fields may ship light-mode defaults.
 
 **Android horizontal overflow inside a vertical list.** Native Markdown tables
 and display math use the patched `OverflowHorizontalScrollView` from
-`react-native-enriched-markdown`. Overflowing blocks keep the first movement
-until its direction is known, then return vertical drags to the parent list.
+`react-native-enriched-markdown`. Overflowing blocks use Android nested
+scrolling while determining the drag direction so the parent list still sees
+pointer changes. A vertical drag cancels the active press before control
+returns to the parent list.
+
+After Android prebuild, run the API 32 Robolectric tests from `apps/mobile/android`:
+
+```bash
+./gradlew :react-native-enriched-markdown:testDebugUnitTest --tests '*OverflowHorizontalScrollViewTest'
+```
 
 For regression testing, paste this fixture into a Markdown attachment, an issue
 description, a comment, or a chat message. Add enough prose after it for the

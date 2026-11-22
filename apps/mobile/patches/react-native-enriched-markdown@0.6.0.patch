@@ -1,9 +1,20 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index f86640c79246605ccb8ba69fe24f5e822f40e87d..00059c444ab7c50d93aa05ac6a465bef6098a19c 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -99,4 +99,6 @@ repositories {
+ dependencies {
++  testImplementation "junit:junit:4.13.2"
++  testImplementation "org.robolectric:robolectric:4.16.1"
+   implementation "com.facebook.react:react-android"
+   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+   // Baseline Profile installer for AOT compilation hints
 diff --git a/android/src/main/java/com/swmansion/enriched/markdown/views/OverflowHorizontalScrollView.kt b/android/src/main/java/com/swmansion/enriched/markdown/views/OverflowHorizontalScrollView.kt
 new file mode 100644
-index 0000000000000000000000000000000000000000..2531452a816378ea79260e6653ff1c9c7e201e2f
+index 0000000000000000000000000000000000000000..3a9d5c5aa24b6f467754c31574353419236078b0
 --- /dev/null
 +++ b/android/src/main/java/com/swmansion/enriched/markdown/views/OverflowHorizontalScrollView.kt
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,90 @@
 +package com.swmansion.enriched.markdown.views
 +
 +import android.content.Context
@@ -22,45 +33,77 @@ index 0000000000000000000000000000000000000000..2531452a816378ea79260e6653ff1c9c
 +
 +  private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
 +  private var drag = Drag.NONE
++  private var pointerId = MotionEvent.INVALID_POINTER_ID
 +  private var downX = 0f
 +  private var downY = 0f
++
++  init {
++    isNestedScrollingEnabled = true
++  }
 +
 +  override fun dispatchTouchEvent(event: MotionEvent): Boolean {
 +    when (event.actionMasked) {
 +      MotionEvent.ACTION_DOWN -> {
 +        drag = if (canScrollHorizontally(-1) || canScrollHorizontally(1)) Drag.PENDING else Drag.NONE
 +        if (drag == Drag.PENDING) {
-+          downX = event.x
-+          downY = event.y
-+          parent?.requestDisallowInterceptTouchEvent(true)
++          trackPointer(event, 0)
++          startNestedScroll(SCROLL_AXIS_VERTICAL)
++        }
++      }
++
++      MotionEvent.ACTION_POINTER_UP -> if (drag == Drag.PENDING) {
++        val liftedIndex = event.actionIndex
++        if (event.getPointerId(liftedIndex) == pointerId) {
++          trackPointer(event, if (liftedIndex == 0) 1 else 0)
 +        }
 +      }
 +
 +      MotionEvent.ACTION_MOVE -> if (drag == Drag.PENDING) {
-+        val distanceX = abs(event.x - downX)
-+        val distanceY = abs(event.y - downY)
-+        if (maxOf(distanceX, distanceY) > touchSlop) {
-+          drag = if (distanceX > distanceY) Drag.HORIZONTAL else Drag.VERTICAL
-+          if (drag == Drag.VERTICAL) {
-+            parent?.requestDisallowInterceptTouchEvent(false)
++        val pointerIndex = event.findPointerIndex(pointerId)
++        if (pointerIndex >= 0) {
++          val distanceX = abs(event.getX(pointerIndex) - downX)
++          val distanceY = abs(event.getY(pointerIndex) - downY)
++          if (maxOf(distanceX, distanceY) > touchSlop) {
++            if (distanceX > distanceY) {
++              drag = Drag.HORIZONTAL
++              parent?.requestDisallowInterceptTouchEvent(true)
++            } else {
++              drag = Drag.VERTICAL
++              cancelPressedChild(event)
++              parent?.requestDisallowInterceptTouchEvent(false)
++            }
++            stopNestedScroll()
 +          }
 +        }
 +      }
++
++      MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> stopNestedScroll()
 +    }
-+    return super.dispatchTouchEvent(event)
++
++    return drag == Drag.VERTICAL || super.dispatchTouchEvent(event)
++  }
++
++  private fun trackPointer(event: MotionEvent, pointerIndex: Int) {
++    pointerId = event.getPointerId(pointerIndex)
++    downX = event.getX(pointerIndex)
++    downY = event.getY(pointerIndex)
++  }
++
++  private fun cancelPressedChild(event: MotionEvent) {
++    val cancel = MotionEvent.obtain(event)
++    try {
++      cancel.action = MotionEvent.ACTION_CANCEL
++      super.dispatchTouchEvent(cancel)
++    } finally {
++      cancel.recycle()
++    }
 +  }
 +
 +  override fun onInterceptTouchEvent(event: MotionEvent): Boolean =
-+    drag != Drag.NONE &&
-+      (drag != Drag.VERTICAL || event.actionMasked != MotionEvent.ACTION_MOVE) &&
-+      super.onInterceptTouchEvent(event)
++    drag != Drag.NONE && super.onInterceptTouchEvent(event)
 +
 +  override fun onTouchEvent(event: MotionEvent): Boolean =
-+    when {
-+      drag == Drag.NONE -> false
-+      drag == Drag.VERTICAL && event.actionMasked == MotionEvent.ACTION_MOVE -> true
-+      else -> super.onTouchEvent(event)
-+    }
++    drag != Drag.NONE && super.onTouchEvent(event)
 +}
 diff --git a/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt b/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt
 index 8ce6f79afd6ebc185e6239cf4823c3313b4bd7b9..0c409c0f39fad108a21862c7e8f7b799755ee02c 100644
@@ -100,3 +143,268 @@ index 668041f1272dfb9fa8baf871fa45185f09054064..2252324018c90fe4c34e70e3c4dffa95
 -  private val scrollView = HorizontalScrollView(context)
 +  private val scrollView = OverflowHorizontalScrollView(context)
    private var cachedLatex: String = ""
+diff --git a/android/src/test/java/com/swmansion/enriched/markdown/views/OverflowHorizontalScrollViewTest.java b/android/src/test/java/com/swmansion/enriched/markdown/views/OverflowHorizontalScrollViewTest.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..16e3e4df87dad0ddb8fb4f47ec820a60300ca684
+--- /dev/null
++++ b/android/src/test/java/com/swmansion/enriched/markdown/views/OverflowHorizontalScrollViewTest.java
+@@ -0,0 +1,259 @@
++package com.swmansion.enriched.markdown.views;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertTrue;
++import static org.robolectric.Shadows.shadowOf;
++
++import android.app.Activity;
++import android.content.Context;
++import android.os.Looper;
++import android.os.SystemClock;
++import android.text.SpannableString;
++import android.text.Spanned;
++import android.text.method.LinkMovementMethod;
++import android.text.style.ClickableSpan;
++import android.view.MotionEvent;
++import android.view.View;
++import android.view.ViewConfiguration;
++import android.widget.FrameLayout;
++import android.widget.HorizontalScrollView;
++import android.widget.LinearLayout;
++import android.widget.ScrollView;
++import android.widget.TextView;
++import java.time.Duration;
++import java.util.concurrent.atomic.AtomicInteger;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.robolectric.Robolectric;
++import org.robolectric.RobolectricTestRunner;
++import org.robolectric.RuntimeEnvironment;
++import org.robolectric.annotation.Config;
++
++@RunWith(RobolectricTestRunner.class)
++@Config(sdk = 32, manifest = Config.NONE)
++public class OverflowHorizontalScrollViewTest {
++  private final Context context = RuntimeEnvironment.getApplication();
++  private final int touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
++
++  @Test
++  public void defaultScrollViewLosesHorizontalDominantDragToPage() {
++    HorizontalScrollView block = new HorizontalScrollView(context);
++    ScrollView page = layout(block, new View(context), 900);
++    drag(page, 205, 75, 115, 55);
++    assertEquals(0, block.getScrollX());
++    assertTrue(page.getScrollY() > 0);
++  }
++
++  @Test
++  public void wideBlockScrollsInBothHorizontalDirections() {
++    HorizontalScrollView block = new OverflowHorizontalScrollView(context);
++    ScrollView page = layout(block, new View(context), 900);
++    drag(page, 205, 75, 115, 55);
++    assertTrue(block.getScrollX() > 0);
++    assertEquals(0, page.getScrollY());
++    int before = block.getScrollX();
++    drag(page, 278, 79, 296, 61);
++    assertTrue(block.getScrollX() < before);
++    assertEquals(0, page.getScrollY());
++  }
++
++  @Test
++  public void sustainedVerticalDragOverWideBlockScrollsPageAndCancelsPress() {
++    AtomicInteger clicks = new AtomicInteger();
++    HorizontalScrollView block = new OverflowHorizontalScrollView(context);
++    ScrollView page = layout(block, clickableCell(clicks), 900);
++    Gesture gesture = new Gesture(page);
++    gesture.send(MotionEvent.ACTION_DOWN, 90, 170);
++    gesture.send(MotionEvent.ACTION_MOVE, 90, 125);
++    gesture.send(MotionEvent.ACTION_MOVE, 90, 85);
++    gesture.send(MotionEvent.ACTION_MOVE, 90, 45);
++    gesture.send(MotionEvent.ACTION_UP, 90, 45);
++    assertTrue(page.getScrollY() > 0);
++    assertEquals(0, block.getScrollX());
++    assertEquals(0, clicks.get());
++  }
++
++  @Test
++  public void narrowBlockLeavesVerticalDragToPage() {
++    HorizontalScrollView block = new OverflowHorizontalScrollView(context);
++    ScrollView page = layout(block, new View(context), 280);
++    drag(page, 225, 56, 200, 32);
++    assertTrue(page.getScrollY() > 0);
++    assertEquals(0, block.getScrollX());
++  }
++
++  @Test
++  public void shortVerticalDragDoesNotClickCell() {
++    AtomicInteger clicks = new AtomicInteger();
++    shortVerticalDrag(layout(new OverflowHorizontalScrollView(context), clickableCell(clicks), 900));
++    assertEquals(0, clicks.get());
++  }
++
++  @Test
++  public void shortVerticalDragDoesNotActivateLink() {
++    AtomicInteger clicks = new AtomicInteger();
++    shortVerticalDrag(layout(new OverflowHorizontalScrollView(context), linkedCell(clicks), 900));
++    assertEquals(0, clicks.get());
++  }
++
++  @Test
++  public void stationaryTapsStillActivateCellAndLink() {
++    AtomicInteger clicks = new AtomicInteger();
++    tap(layout(new OverflowHorizontalScrollView(context), clickableCell(clicks), 900));
++    assertEquals(1, clicks.get());
++    tap(layout(new OverflowHorizontalScrollView(context), linkedCell(clicks), 900));
++    assertEquals(2, clicks.get());
++  }
++
++  @Test
++  public void stationaryLongPressStillActivatesCell() {
++    AtomicInteger longPresses = new AtomicInteger();
++    AtomicInteger clicks = new AtomicInteger();
++    View cell = clickableCell(clicks);
++    cell.setOnLongClickListener(view -> {
++      longPresses.incrementAndGet();
++      return true;
++    });
++    ScrollView page = layout(new OverflowHorizontalScrollView(context), cell, 900);
++    Gesture gesture = new Gesture(page);
++    gesture.send(MotionEvent.ACTION_DOWN, 40, 20);
++    shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(
++        ViewConfiguration.getTapTimeout() + ViewConfiguration.getLongPressTimeout() + 1));
++    gesture.send(MotionEvent.ACTION_UP, 40, 20);
++    assertEquals(1, longPresses.get());
++    assertEquals(0, clicks.get());
++  }
++
++  @Test
++  public void verticalDragHandsOffAfterTrackedPointerLeaves() {
++    HorizontalScrollView block = new OverflowHorizontalScrollView(context);
++    ScrollView page = layout(block, new View(context), 900);
++    Gesture gesture = new Gesture(page);
++    Touch first = new Touch(7, 60, 170);
++    Touch second = new Touch(19, 235, 170);
++    gesture.send(MotionEvent.ACTION_DOWN, first);
++    gesture.send(MotionEvent.ACTION_POINTER_DOWN | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT), first, second);
++    gesture.send(MotionEvent.ACTION_POINTER_UP, first, second);
++    gesture.send(MotionEvent.ACTION_MOVE, new Touch(19, 234, 167));
++    gesture.send(MotionEvent.ACTION_MOVE, new Touch(19, 234, 125));
++    gesture.send(MotionEvent.ACTION_MOVE, new Touch(19, 234, 85));
++    gesture.send(MotionEvent.ACTION_MOVE, new Touch(19, 234, 45));
++    gesture.send(MotionEvent.ACTION_UP, new Touch(19, 234, 45));
++    assertTrue(page.getScrollY() > 0);
++    assertEquals(0, block.getScrollX());
++  }
++
++  private View clickableCell(AtomicInteger clicks) {
++    View cell = new View(context);
++    cell.setOnClickListener(view -> clicks.incrementAndGet());
++    return cell;
++  }
++
++  private TextView linkedCell(AtomicInteger clicks) {
++    SpannableString text = new SpannableString("Open link");
++    text.setSpan(new ClickableSpan() {
++      @Override
++      public void onClick(View widget) {
++        clicks.incrementAndGet();
++      }
++    }, 0, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
++    TextView cell = new TextView(context);
++    cell.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 96);
++    cell.setIncludeFontPadding(false);
++    cell.setText(text);
++    cell.setMovementMethod(LinkMovementMethod.getInstance());
++    return cell;
++  }
++
++  private ScrollView layout(HorizontalScrollView block, View content, int width) {
++    Activity activity = Robolectric.buildActivity(Activity.class).setup().get();
++    ScrollView page = new ScrollView(activity);
++    LinearLayout body = new LinearLayout(activity);
++    body.setOrientation(LinearLayout.VERTICAL);
++    page.addView(body);
++    activity.setContentView(page);
++    content.setMinimumWidth(width);
++    content.setClickable(true);
++    block.addView(content, new FrameLayout.LayoutParams(width, 200));
++    body.addView(block, new LinearLayout.LayoutParams(300, 200));
++    body.addView(new View(activity), new LinearLayout.LayoutParams(300, 1000));
++    int exact = View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY);
++    page.measure(exact, exact);
++    page.layout(0, 0, 300, 300);
++    return page;
++  }
++
++  private void shortVerticalDrag(ScrollView page) {
++    Gesture gesture = new Gesture(page);
++    int finalY = 20 + 3 * touchSlop + 1;
++    gesture.send(MotionEvent.ACTION_DOWN, 40, 20);
++    gesture.send(MotionEvent.ACTION_MOVE, 40, finalY);
++    gesture.send(MotionEvent.ACTION_UP, 40, finalY);
++  }
++
++  private static void tap(ScrollView page) {
++    Gesture gesture = new Gesture(page);
++    gesture.send(MotionEvent.ACTION_DOWN, 40, 20);
++    gesture.send(MotionEvent.ACTION_UP, 40, 20);
++  }
++
++  private static void drag(ScrollView page, int firstX, int firstY, int secondX, int secondY) {
++    Gesture gesture = new Gesture(page);
++    gesture.send(MotionEvent.ACTION_DOWN, 250, 95);
++    gesture.send(MotionEvent.ACTION_MOVE, firstX, firstY);
++    gesture.send(MotionEvent.ACTION_MOVE, secondX, secondY);
++    gesture.send(MotionEvent.ACTION_MOVE, secondX, secondY - 15);
++    gesture.send(MotionEvent.ACTION_CANCEL, secondX, secondY - 15);
++  }
++
++  private static final class Touch {
++    final int id;
++    final float x;
++    final float y;
++
++    Touch(int id, float x, float y) {
++      this.id = id;
++      this.x = x;
++      this.y = y;
++    }
++  }
++
++  private static final class Gesture {
++    private final ScrollView page;
++    private final long downTime = SystemClock.uptimeMillis();
++    private long eventTime = downTime;
++
++    Gesture(ScrollView page) {
++      this.page = page;
++    }
++
++    void send(int action, int x, int y) {
++      send(action, new Touch(0, x, y));
++    }
++
++    void send(int action, Touch... touches) {
++      MotionEvent.PointerProperties[] properties = new MotionEvent.PointerProperties[touches.length];
++      MotionEvent.PointerCoords[] coordinates = new MotionEvent.PointerCoords[touches.length];
++      for (int index = 0; index < touches.length; index++) {
++        Touch touch = touches[index];
++        properties[index] = new MotionEvent.PointerProperties();
++        properties[index].id = touch.id;
++        properties[index].toolType = MotionEvent.TOOL_TYPE_FINGER;
++        coordinates[index] = new MotionEvent.PointerCoords();
++        coordinates[index].x = touch.x;
++        coordinates[index].y = touch.y;
++        coordinates[index].pressure = 1;
++        coordinates[index].size = 1;
++      }
++      eventTime = Math.max(eventTime + 16, SystemClock.uptimeMillis());
++      MotionEvent event = MotionEvent.obtain(downTime, eventTime, action, touches.length,
++          properties, coordinates, 0, 0, 1, 1, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0);
++      try {
++        page.dispatchTouchEvent(event);
++      } finally {
++        event.recycle();
++      }
++      shadowOf(Looper.getMainLooper()).idle();
++    }
++  }
++}
