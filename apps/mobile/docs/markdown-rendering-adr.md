@@ -136,6 +136,48 @@ upgrade because newly-added color fields may ship light-mode defaults.
 
 ### Known limitations and mitigations
 
+**Android horizontal overflow inside a vertical list.** Native Markdown tables
+and display math use the patched `OverflowHorizontalScrollView` from
+`react-native-enriched-markdown`. Overflowing blocks use Android nested
+scrolling while determining the drag direction so the parent list still sees
+pointer changes. A vertical drag cancels the active press before control
+returns to the parent list.
+
+After Android prebuild, run the API 32 Robolectric tests from `apps/mobile/android`:
+
+```bash
+./gradlew :react-native-enriched-markdown:testDebugUnitTest --tests '*OverflowHorizontalScrollViewTest'
+```
+
+For regression testing, paste this fixture into a Markdown attachment, an issue
+description, a comment, or a chat message. Add enough prose after it for the
+page to scroll vertically.
+
+````markdown
+| First column | Second column | Third column | Fourth column | Fifth column | Last column |
+| ------------ | ------------- | ------------ | ------------- | ------------ | ----------- |
+| Start A      | Field B       | Field C      | Field D       | Field E      | End F       |
+
+| Narrow | Table |
+| ------ | ----- |
+| A      | B     |
+
+```text
+Code start 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 code end
+```
+
+$$
+\frac{a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v+w+x+y+z}{1+2+3+4+5+6+7+8+9}
+$$
+````
+
+- Drag left across the wide table with slight vertical movement, then back
+  right. Both ends of the table should be reachable.
+- Start a vertical drag over each table. The page should scroll without moving
+  the tables horizontally.
+- Check that the narrow table still responds to long-press and that the code
+  block and any overflowing equation can reach their last characters.
+
 **Inline code chip top-heavy padding** — visible as `~13pt empty space
 above` vs `~3pt below` glyphs in chips inside CJK paragraphs (seen in
 #MUL-2397 and #MUL-2395 dark screenshots, 2026-05-19).
