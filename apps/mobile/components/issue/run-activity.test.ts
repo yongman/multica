@@ -6,6 +6,7 @@ import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { AgentTaskSchema } from "@/data/schemas";
 import { useRunTranscriptRealtime } from "@/data/realtime/use-run-transcript-realtime";
+import { embeddedHeaderCases } from "@/lib/__tests__/embedded-header-cases";
 import { RunActivity } from "./run-activity";
 
 const state = vi.hoisted(() => ({
@@ -127,6 +128,22 @@ describe("live execution card wiring", () => {
       } },
     });
     expect(state.query.data).toEqual(original);
+  });
+
+  describe.each(["cmd", "command"])("embedded commands in the collapsed %s preview", (field) => {
+    it.each(embeddedHeaderCases)("displays a safe preview for $name", ({ command, safe }) => {
+      state.query.data = [{
+        task_id: task.id, issue_id: task.issue_id, seq: 1, type: "tool_use",
+        call_id: "request", tool: "exec_command", input: { [field]: command },
+      }];
+      const { nodes } = open();
+      const preview = content(nodes.find((node) => node.type === "CollapsibleTrigger"));
+      expect(preview).toContain(safe);
+      expect(preview).not.toContain("opaque-");
+      expect(nodes.find((node) => node.type === "TranscriptEntry")?.props.item)
+        .toMatchObject({ call: { input: { [field]: safe } } });
+      expect(state.query.data[0].input).toEqual({ [field]: command });
+    });
   });
 
   it("offers a retry after a failed load while retaining streamed steps", () => {

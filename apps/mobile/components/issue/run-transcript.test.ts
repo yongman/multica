@@ -3,6 +3,7 @@ import { createElement, type ReactElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { AgentTaskSchema } from "@/data/schemas";
 import type { TaskMessagePayload } from "@multica/core/types";
+import { embeddedHeaderCases } from "@/lib/__tests__/embedded-header-cases";
 import { RunTranscript } from "./run-transcript";
 
 vi.mock("react", async (importOriginal) => ({
@@ -45,6 +46,21 @@ function renderedElements(node: unknown): Element[] {
 const task = AgentTaskSchema.parse({ id: "task-1", issue_id: "issue-1", status: "running" });
 
 describe("transcript input display", () => {
+  describe.each(["cmd", "command"])("embedded commands in %s", (field) => {
+    it.each(embeddedHeaderCases)("renders sanitized final JSON for $name", ({ command, safe }) => {
+      const items: TaskMessagePayload[] = [{
+        task_id: task.id, issue_id: task.issue_id, seq: 1, type: "tool_use",
+        call_id: "request", tool: "exec_command", input: { [field]: command },
+      }];
+      const nodes = renderedElements(RunTranscript({ items, task, header: createElement("View") }));
+      const displayed = nodes.find((node) => node.type === "Text" && node.props.selectable)?.props.children;
+      expect(displayed).toBe(JSON.stringify({ [field]: safe }, null, 2));
+      expect(JSON.parse(displayed as string)).toEqual({ [field]: safe });
+      expect(displayed).not.toContain("opaque-");
+      expect(items[0].input).toEqual({ [field]: command });
+    });
+  });
+
   it.each(["cmd", "command"])("renders valid sanitized JSON for %s without corrupting headers or trailing arguments", (field) => {
     const rawCommand = `curl -H "Authorization: Digest user=\\"user\\",\\\n response=\\"opaque-response\\"" -H X-Auth-Token:\\ opaque-token -H "Accept: application/json" --verbose`;
     const safeCommand = `curl -H "Authorization: [REDACTED]" -H X-Auth-Token:[REDACTED] -H "Accept: application/json" --verbose`;
