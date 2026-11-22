@@ -1,0 +1,102 @@
+diff --git a/android/src/main/java/com/swmansion/enriched/markdown/views/OverflowHorizontalScrollView.kt b/android/src/main/java/com/swmansion/enriched/markdown/views/OverflowHorizontalScrollView.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..2531452a816378ea79260e6653ff1c9c7e201e2f
+--- /dev/null
++++ b/android/src/main/java/com/swmansion/enriched/markdown/views/OverflowHorizontalScrollView.kt
+@@ -0,0 +1,58 @@
++package com.swmansion.enriched.markdown.views
++
++import android.content.Context
++import android.view.MotionEvent
++import android.view.ViewConfiguration
++import android.widget.HorizontalScrollView
++import kotlin.math.abs
++
++internal class OverflowHorizontalScrollView(context: Context) : HorizontalScrollView(context) {
++  private enum class Drag {
++    NONE,
++    PENDING,
++    HORIZONTAL,
++    VERTICAL,
++  }
++
++  private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
++  private var drag = Drag.NONE
++  private var downX = 0f
++  private var downY = 0f
++
++  override fun dispatchTouchEvent(event: MotionEvent): Boolean {
++    when (event.actionMasked) {
++      MotionEvent.ACTION_DOWN -> {
++        drag = if (canScrollHorizontally(-1) || canScrollHorizontally(1)) Drag.PENDING else Drag.NONE
++        if (drag == Drag.PENDING) {
++          downX = event.x
++          downY = event.y
++          parent?.requestDisallowInterceptTouchEvent(true)
++        }
++      }
++
++      MotionEvent.ACTION_MOVE -> if (drag == Drag.PENDING) {
++        val distanceX = abs(event.x - downX)
++        val distanceY = abs(event.y - downY)
++        if (maxOf(distanceX, distanceY) > touchSlop) {
++          drag = if (distanceX > distanceY) Drag.HORIZONTAL else Drag.VERTICAL
++          if (drag == Drag.VERTICAL) {
++            parent?.requestDisallowInterceptTouchEvent(false)
++          }
++        }
++      }
++    }
++    return super.dispatchTouchEvent(event)
++  }
++
++  override fun onInterceptTouchEvent(event: MotionEvent): Boolean =
++    drag != Drag.NONE &&
++      (drag != Drag.VERTICAL || event.actionMasked != MotionEvent.ACTION_MOVE) &&
++      super.onInterceptTouchEvent(event)
++
++  override fun onTouchEvent(event: MotionEvent): Boolean =
++    when {
++      drag == Drag.NONE -> false
++      drag == Drag.VERTICAL && event.actionMasked == MotionEvent.ACTION_MOVE -> true
++      else -> super.onTouchEvent(event)
++    }
++}
+diff --git a/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt b/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt
+index 8ce6f79afd6ebc185e6239cf4823c3313b4bd7b9..0c409c0f39fad108a21862c7e8f7b799755ee02c 100644
+--- a/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt
++++ b/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt
+@@ -17,7 +17,6 @@ import android.text.style.MetricAffectingSpan
+ import android.view.Gravity
+ import android.view.View
+ import android.widget.FrameLayout
+-import android.widget.HorizontalScrollView
+ import com.swmansion.enriched.markdown.parser.MarkdownASTNode
+ import com.swmansion.enriched.markdown.parser.MarkdownASTNode.NodeType
+ import com.swmansion.enriched.markdown.renderer.Renderer
+@@ -53,5 +52,5 @@ class TableContainerView(
+   private val scrollView =
+-    HorizontalScrollView(context).apply {
++    OverflowHorizontalScrollView(context).apply {
+       isHorizontalScrollBarEnabled = true
+       overScrollMode = View.OVER_SCROLL_NEVER
+       addView(GridContainerView(context))
+diff --git a/android/src/math/java/com/swmansion/enriched/markdown/views/MathContainerView.kt b/android/src/math/java/com/swmansion/enriched/markdown/views/MathContainerView.kt
+index 668041f1272dfb9fa8baf871fa45185f09054064..2252324018c90fe4c34e70e3c4dffa959d8fd868 100644
+--- a/android/src/math/java/com/swmansion/enriched/markdown/views/MathContainerView.kt
++++ b/android/src/math/java/com/swmansion/enriched/markdown/views/MathContainerView.kt
+@@ -8,7 +8,6 @@ import android.view.View
+ import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+ import android.widget.FrameLayout
+-import android.widget.HorizontalScrollView
+ import com.agog.mathdisplay.MTMathView
+ import com.swmansion.enriched.markdown.spans.MathMeasureHelper
+ import com.swmansion.enriched.markdown.spans.MathMeasureRequest
+@@ -23,5 +22,5 @@ class MathContainerView(
+   BlockSegmentView {
+   private val mathStyle: MathStyle = styleConfig.mathStyle
+   private val mathView = MTMathView(context)
+-  private val scrollView = HorizontalScrollView(context)
++  private val scrollView = OverflowHorizontalScrollView(context)
+   private var cachedLatex: String = ""
