@@ -147,6 +147,50 @@ describe("historical run transcript", () => {
     expect(call).toEqual(original);
   });
 
+  describe.each(["cmd", "command"])("shell header argument boundaries in %s", (field) => {
+    const tail = ` -H "Accept: application/json" --verbose https://example.test`;
+    it.each([
+      [`"Authorization: Digest user=\\"user\\",\n response=\\"opaque-response\\""`, `"Authorization: [REDACTED]"`],
+      [`"Authorization: Digest user=\\"user\\",\\\n response=\\"opaque-response\\""`, `"Authorization: [REDACTED]"`],
+      [`"Authorization: Digest user=\\"user\\",\\\r\n response=\\"opaque-response\\""`, `"Authorization: [REDACTED]"`],
+      [`'Cookie: session=opaque-cookie;\n csrf=opaque-csrf'`, `'Cookie: [REDACTED]'`],
+      [`Authorization:\\ Basic\\ opaque-basic`, `Authorization:[REDACTED]`],
+      [`Authorization:\\ Digest\\ user=user,\\\n\\ response=opaque-response`, `Authorization:[REDACTED]`],
+      [`X-API-Key:\\ opaque-key`, `X-API-Key:[REDACTED]`],
+      [`X-Auth-Token:\\ opaque-token`, `X-Auth-Token:[REDACTED]`],
+      [`"Authorization: Basic "opaque-basic`, `"Authorization: [REDACTED]"`],
+      [`Authorization:`, `Authorization:[REDACTED]`],
+    ])("redacts the full shell word and preserves following arguments: %s", (argument, safeArgument) => {
+      const call = {
+        ...message(1, "tool_use"), tool: "exec_command",
+        input: { [field]: `curl -H ${argument}${tail}` },
+      };
+      const original = structuredClone(call);
+      const entry = buildRunTranscriptEntries([call])[0];
+      if (entry.kind !== "tool") throw new Error("expected tool");
+      const expected = `curl -H ${safeArgument}${tail}`;
+      expect(entry.call?.input).toEqual({ [field]: expected });
+      expect(runToolContext(call)).toBe(expected);
+      expect(runEntrySummary(entry)).toBe(expected);
+      expect(buildRunTranscript([entry.call!])[0].input).toEqual(entry.call?.input);
+      expect(call).toEqual(original);
+    });
+  });
+
+  it.each([
+    ["--header", " "], ["--header", "="], ["-H", ""], ["-H", "\\\n"],
+  ])("recognizes the shell header flag %s with separator %j", (flag, separator) => {
+    const cmd = `curl ${flag}${separator}Cookie:\\ session=opaque-cookie -H Accept:\\ application/json --verbose`;
+    const expected = `curl ${flag}${separator}Cookie:[REDACTED] -H Accept:\\ application/json --verbose`;
+    expect(runToolContext({ ...message(1, "tool_use"), input: { cmd } })).toBe(expected);
+  });
+
+  it("keeps bare HTTP headers separate from shell words containing escaped spaces", () => {
+    const raw = 'Cookie: session="opaque-cookie"; csrf=opaque-csrf\r\nX-Auth-Token: opaque-token\nAccept: application/json';
+    expect(buildRunTranscript([message(1, "text", raw)])[0].content)
+      .toBe("Cookie: [REDACTED]\r\nX-Auth-Token: [REDACTED]\nAccept: application/json");
+  });
+
   it.each([
     [`-H "aUtHoRiZaTiOn: Bearer opaque-token"`, `-H "aUtHoRiZaTiOn: [REDACTED]"`],
     [`-H 'Authorization: Digest username="user", response="opaque-digest"'`, `-H 'Authorization: [REDACTED]'`],

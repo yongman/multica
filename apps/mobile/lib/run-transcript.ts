@@ -61,25 +61,70 @@ function isCredentialField(key: string): boolean {
 
 const CREDENTIAL_HEADER =
   "(?:(?:proxy-)?authorization|(?:set-)?cookie|(?:x-)?api-key|x-(?:auth|access)-token)";
-// Quoted command headers end at the matching unescaped quote; bare HTTP
-// headers end at the line boundary. Incomplete streamed headers are masked too.
 const CREDENTIAL_HEADER_TEXT = new RegExp(
-  String.raw`(["'])(${CREDENTIAL_HEADER}[ \t]*:[ \t]*)(?:\\[^\r\n]|(?!\1)[^\\\r\n])*(\1|(?=[\r\n]|$))|((?:^|[^\w-])${CREDENTIAL_HEADER}[ \t]*:[ \t]*)[^\r\n]*`,
+  String.raw`(^|[^\w-]|-H)(${CREDENTIAL_HEADER}[ \t]*:)([ \t]*)`,
   "gim",
 );
+
+type ShellQuote = "" | "'" | '"';
+
+/** Read one shell word without evaluating it. Physical newlines only end
+ * unquoted, unescaped words; adjacent quoted/unquoted segments stay together. */
+function scanShellWord(text: string, start: number, initialQuote: ShellQuote) {
+  let quote = initialQuote;
+  let end = start;
+  let escapedWhitespace = false;
+  while (end < text.length) {
+    const char = text[end]!;
+    if (char === "\\" && quote !== "'") {
+      const next = text[end + 1];
+      escapedWhitespace ||= !!next && /\s/.test(next);
+      // Treat CRLF continuations as one escape, just like LF continuations.
+      end += next === "\r" && text[end + 2] === "\n" ? 3 : next ? 2 : 1;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) quote = "";
+    } else if (char === "'" || char === '"') {
+      quote = char;
+    } else if (/[\s;|&<>()]/.test(char)) {
+      break;
+    }
+    end++;
+  }
+  return { end, quote, escapedWhitespace };
+}
 
 function redactRunText(text: string): string {
   let result = "";
   let offset = 0;
   for (const match of text.matchAll(CREDENTIAL_HEADER_TEXT)) {
-    const [header, quote, quotedName, closingQuote, bareName] = match;
+    if (match.index < offset) continue;
+    const [, prefix, name, padding] = match;
+    const quote: ShellQuote = prefix === "'" || prefix === '"' ? prefix : "";
+    const nameStart = match.index + prefix.length;
+    const valueStart = nameStart + name.length;
+    const word = scanShellWord(text, valueStart, quote);
+    const beforeName = text.slice(0, nameStart);
+    const headerFlag = prefix === "-H" ||
+      /(?:^|[\s;|&()])(?:-H|--header)(?:=|(?:[ \t]|\\\r?\n)+)$/.test(beforeName);
+    const lineStart = Math.max(beforeName.lastIndexOf("\n"), beforeName.lastIndexOf("\r")) + 1;
+    const bareLine = !beforeName.slice(lineStart).trim();
+    // Quoted headers and -H/--header arguments obey shell word boundaries.
+    // Bare HTTP values extend to the line boundary, including cookie separators.
+    const shellArgument = !!quote || headerFlag || (!bareLine && word.escapedWhitespace);
+    let end = word.end;
+    if (!shellArgument) {
+      end = valueStart;
+      while (end < text.length && text[end] !== "\r" && text[end] !== "\n") end++;
+    }
     // Apply generic patterns only outside the masked header, so TOKEN patterns
-    // cannot consume its placeholder and closing quote.
+    // cannot consume its placeholder and closing quote. Restore only the
+    // opening quote retained in the prefix, not quotes inside the secret value.
     result += redactSecrets(text.slice(offset, match.index));
-    result += quote
-      ? `${quote}${quotedName}[REDACTED]${closingQuote}`
-      : `${bareName}[REDACTED]`;
-    offset = match.index + header.length;
+    const spacing = shellArgument && !quote ? "" : padding;
+    result += `${prefix}${name}${spacing}[REDACTED]${quote && !word.quote ? quote : ""}`;
+    offset = end;
   }
   return result + redactSecrets(text.slice(offset));
 }

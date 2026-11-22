@@ -3,7 +3,6 @@ import { FlatList, Pressable, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
 import type { AgentTask, TaskMessagePayload } from "@multica/core/types";
-import { redactSecrets } from "@multica/core/security/redact-secrets";
 import { Text } from "@/components/ui/text";
 import {
   Collapsible,
@@ -80,6 +79,7 @@ function EntrySeparator() {
   return <View className="h-2" />;
 }
 
+/** Entries come from buildRunTranscriptEntries, which sanitizes before formatting. */
 export function TranscriptEntry({ item: entry, status }: { item: RunTranscriptEntry; status: AgentTask["status"] }) {
   if (entry.kind === "tool") return <ToolEntry entry={entry} status={status} />;
   const item = entry.message;
@@ -116,7 +116,7 @@ function ToolEntry({ entry, status }: { entry: Extract<RunTranscriptEntry, { kin
   const state = runToolStatus(entry, status);
   const input =
     call?.input && Object.keys(call.input).length > 0
-      ? redactSecrets(JSON.stringify(call.input, null, 2))
+      ? JSON.stringify(call.input, null, 2)
       : "—";
   const detail = [call?.tool || result?.tool || t("runs.transcript.unknown_tool"), runToolContext(call)]
     .filter(Boolean).join(" · ");
@@ -169,11 +169,10 @@ function ToolResultContent({ item }: { item: TaskMessagePayload }) {
 function ClippedContent({ content, markdown = false }: { content: string; markdown?: boolean }) {
   const { t } = useT("issues");
   const [showFullOutput, setShowFullOutput] = useState(false);
-  const output = redactSecrets(content);
-  const clipped = output.length > DISPLAY_CLIP_CHARS;
+  const clipped = content.length > DISPLAY_CLIP_CHARS;
   const shown = clipped && !showFullOutput
-    ? `${output.slice(0, DISPLAY_CLIP_CHARS)}...`
-    : output;
+    ? `${content.slice(0, DISPLAY_CLIP_CHARS)}...`
+    : content;
 
   return (
     <View className="gap-2">
