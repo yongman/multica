@@ -9,7 +9,7 @@
  * the legacy `useRunsSheetStore` is gone since the route system is the
  * single source of truth for what's open.
  *
- * Past rows push a task-id-addressed execution-record screen. Keeping the
+ * Rows push a task-id-addressed execution-record screen. Keeping the
  * identifier in the route makes deep links and cache misses deterministic.
  */
 import { useMemo } from "react";
@@ -25,6 +25,7 @@ import {
 } from "@/data/queries/issues";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { useT } from "@/lib/i18n";
+import { useIssueRealtime } from "@/data/realtime/use-issue-realtime";
 
 const PAST_STATUS_ORDER: Record<AgentTask["status"], number> = {
   failed: 0,
@@ -41,6 +42,7 @@ export default function IssueRunsRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
   const { t } = useT("issues");
+  useIssueRealtime(id);
   const { data: activeTasks = [] } = useQuery(
     issueActiveTasksOptions(wsId, id),
   );

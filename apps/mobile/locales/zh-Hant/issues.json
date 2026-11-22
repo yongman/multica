@@ -277,6 +277,21 @@
       "truncated": "此輸出在儲存時已截斷。",
       "diagnostics": "技術詳情",
       "show_full_output": "展開完整輸出",
+      "show_more": "展開更多",
+      "view_steps": "查看 {{name}} 的執行步驟",
+      "full_log": "開啟完整執行紀錄",
+      "steps_other": "{{count}} 個步驟",
+      "recent_steps": "顯示最近 6 個步驟",
+      "waiting_response": "等待 AI 代理回應...",
+      "waiting_result": "等待工具回傳結果...",
+      "no_result": "未記錄工具回傳結果。",
+      "step_status": {
+        "running": "執行中",
+        "completed": "已收到結果",
+        "failed": "執行失敗，未記錄結果",
+        "cancelled": "執行已取消",
+        "unavailable": "結果無法使用"
+      },
       "show_less": "收起"
     },
     "status": {

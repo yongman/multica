@@ -37,6 +37,7 @@ import type {
 } from "@multica/core/types";
 import { issueKeys } from "@/data/queries/issue-keys";
 import { useWSSubscriptions } from "@/lib/use-ws-subscriptions";
+import { refreshQuery } from "./query-refresh";
 import {
   addCommentReaction,
   addIssueReaction,
@@ -55,6 +56,7 @@ import {
   removeCommentReaction,
   removeFromMyIssuesList,
   removeIssueReaction,
+  refreshIssueTasks,
 } from "./issue-ws-updaters";
 
 type TaskEventPayload =
@@ -81,8 +83,8 @@ export function useIssueRealtime(
         qc.getQueryData<Issue[]>(childrenKey)?.some((child) => child.id === id) ?? false;
 
       const invalidateThisIssue = () => {
-        qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issueId) });
-        qc.invalidateQueries({ queryKey: issueKeys.timeline(wsId, issueId) });
+        void refreshQuery(qc, issueKeys.detail(wsId, issueId));
+        void refreshQuery(qc, issueKeys.timeline(wsId, issueId));
       };
 
       // Task-query invalidation — separate from detail/timeline so the
@@ -92,8 +94,7 @@ export function useIssueRealtime(
       // apps/mobile/CLAUDE.md "Patch over invalidate" rule #1 (payload is
       // just an id), invalidate is the correct primitive.
       const invalidateTaskQueries = () => {
-        qc.invalidateQueries({ queryKey: issueKeys.activeTasks(wsId, issueId) });
-        qc.invalidateQueries({ queryKey: issueKeys.tasks(wsId, issueId) });
+        void refreshIssueTasks(qc, wsId, issueId);
       };
 
       // Shared cross-event handler for the 6 task:* subscriptions below.
@@ -108,7 +109,7 @@ export function useIssueRealtime(
         invalidateTaskQueries();
       };
       const onTaskStateEvent = (p: unknown) => {
-        if (isLoadedChild((p as TaskEventPayload).issue_id)) invalidateChildren();
+        if (isLoadedChild((p as TaskEventPayload).issue_id)) void refreshQuery(qc, childrenKey);
         onTaskEvent(p);
       };
 
@@ -251,6 +252,8 @@ export function useIssueRealtime(
         ws.on("task:queued", onTaskStateEvent),
         ws.on("task:coalesced", onTaskStateEvent),
         ws.on("task:dispatch", onTaskStateEvent),
+        ws.on("task:running", onTaskStateEvent),
+        ws.on("task:waiting_local_directory", onTaskStateEvent),
         ws.on("task:progress", onTaskEvent),
         ws.on("task:completed", onTaskStateEvent),
         ws.on("task:failed", onTaskStateEvent),
@@ -259,7 +262,7 @@ export function useIssueRealtime(
         // ----- Reconnect -----
         ws.onReconnect(() => {
           invalidateIssueAfterReconnect(qc, wsId, issueId);
-          invalidateChildren();
+          void refreshQuery(qc, childrenKey);
         }),
       ];
     },

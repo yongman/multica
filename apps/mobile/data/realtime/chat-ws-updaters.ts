@@ -11,8 +11,8 @@
  *     are compared structurally so it'd *appear* to work, but binding cache
  *     mutation to a foreign key factory invites silent drift the moment
  *     either side adjusts its key shape.
- *   - Mobile has a smaller cache surface (no taskMessages live timeline in
- *     v1, no per-user pending-tasks aggregate).
+ *   - Mobile shares its task-message cache between chat and issue run views,
+ *     without web's per-user pending-tasks aggregate.
  *
  * Cache shapes (the design contract):
  *   - chatKeys.sessions(wsId)       → ChatSession[]
@@ -37,6 +37,7 @@ import type {
   TaskDispatchPayload,
 } from "@multica/core/types";
 import { chatKeys } from "@/data/queries/chat";
+import { refreshQuery } from "./query-refresh";
 
 // Sessions list (ChatSession[] keyed by wsId)
 
@@ -381,19 +382,27 @@ export function appendTaskMessage(
   qc: QueryClient,
   payload: TaskMessagePayload,
 ) {
+  appendTaskMessages(qc, payload.task_id, [payload]);
+}
+
+export function appendTaskMessages(
+  qc: QueryClient,
+  taskId: string,
+  messages: readonly TaskMessagePayload[],
+) {
+  if (messages.length === 0) return;
   qc.setQueryData<TaskMessagePayload[]>(
-    chatKeys.taskMessages(payload.task_id),
+    chatKeys.taskMessages(taskId),
     (old = []) => {
-      if (old.some((m) => m.seq === payload.seq)) return old;
-      return [...old, payload].sort((a, b) => a.seq - b.seq);
+      const bySeq = new Map(old.map((message) => [message.seq, message]));
+      for (const message of messages) {
+        if (!bySeq.has(message.seq)) bySeq.set(message.seq, message);
+      }
+      return bySeq.size === old.length ? old : [...bySeq.values()].sort((a, b) => a.seq - b.seq);
     },
   );
 }
 
-export async function refreshTaskMessages(qc: QueryClient, taskId: string) {
-  const queryKey = chatKeys.taskMessages(taskId);
-  // Invalidation alone reuses an unfinished first load. Cancel it first,
-  // retaining any WS rows received since it began instead of reverting them.
-  await qc.cancelQueries({ queryKey }, { revert: false, silent: true });
-  await qc.invalidateQueries({ queryKey });
+export function refreshTaskMessages(qc: QueryClient, taskId: string) {
+  return refreshQuery(qc, chatKeys.taskMessages(taskId));
 }

@@ -15,6 +15,7 @@ import type {
   TimelineEntry,
 } from "@multica/core/types";
 import { issueKeys } from "@/data/queries/issue-keys";
+import { refreshQuery } from "./query-refresh";
 
 type TimelinePredicate = (entry: TimelineEntry) => boolean;
 type TimelineMutate = (entry: TimelineEntry) => TimelineEntry;
@@ -199,16 +200,23 @@ export function clearIssueDetail(
   qc.removeQueries({ queryKey: issueKeys.timeline(wsId, issueId) });
 }
 
+/** A lifecycle event must not reuse a first load that captured the old status. */
+export function refreshIssueTasks(qc: QueryClient, wsId: string | null, issueId: string) {
+  return Promise.all([
+    issueKeys.activeTasks(wsId, issueId),
+    issueKeys.tasks(wsId, issueId),
+  ].map((queryKey) => refreshQuery(qc, queryKey)));
+}
+
 export function invalidateIssueAfterReconnect(
   qc: QueryClient,
   wsId: string,
   issueId: string,
 ) {
-  qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issueId) });
-  qc.invalidateQueries({ queryKey: issueKeys.timeline(wsId, issueId) });
-  qc.invalidateQueries({ queryKey: issueKeys.attachments(wsId, issueId) });
-  qc.invalidateQueries({ queryKey: issueKeys.activeTasks(wsId, issueId) });
-  qc.invalidateQueries({ queryKey: issueKeys.tasks(wsId, issueId) });
+  void refreshQuery(qc, issueKeys.detail(wsId, issueId));
+  void refreshQuery(qc, issueKeys.timeline(wsId, issueId));
+  void refreshQuery(qc, issueKeys.attachments(wsId, issueId));
+  void refreshIssueTasks(qc, wsId, issueId);
 }
 
 // Issue timeline (flat TimelineEntry[], ASC oldest-first)

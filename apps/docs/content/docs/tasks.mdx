@@ -76,6 +76,13 @@ The demo below walks through a full cycle: a run queues, starts, and fails; you 
 
 ![Run record: status timeline, agent summary, and individual tool calls](/images/docs/task-transcript.webp)
 
+On mobile, the issue header shows a live card for each active agent with its
+current command or activity. Expand a card to inspect the latest six steps and
+their tool parameters and results, or open the full execution record for all
+steps. Both active and past entries in **Agent Runs** open that record. Long
+content can be expanded; a missing tool result stays marked as unavailable
+after the run ends.
+
 <Callout type="warning">
 Changing an issue's assignee or status does not stop a run that has already started; to interrupt one, stop it in the execution log. Deleting an issue cancels its active runs.
 </Callout>

@@ -41,21 +41,22 @@ describe("applyIssueCreated", () => {
 });
 
 describe("invalidateIssueAfterReconnect", () => {
-  it("invalidates attachments together with the issue and task caches", () => {
+  it("invalidates attachments together with the issue and task caches", async () => {
     const qc = new QueryClient();
-    const invalidate = vi.spyOn(qc, "invalidateQueries");
     const wsId = "workspace-1";
     const issueId = "issue-1";
-
-    invalidateIssueAfterReconnect(qc, wsId, issueId);
-
-    expect(invalidate.mock.calls.map(([filters]) => filters?.queryKey)).toEqual([
+    const keys = [
       issueKeys.detail(wsId, issueId),
       issueKeys.timeline(wsId, issueId),
       issueKeys.attachments(wsId, issueId),
       issueKeys.activeTasks(wsId, issueId),
       issueKeys.tasks(wsId, issueId),
-    ]);
+    ];
+    for (const key of keys) qc.setQueryData(key, []);
+    invalidateIssueAfterReconnect(qc, wsId, issueId);
+    await vi.waitFor(() => {
+      for (const key of keys) expect(qc.getQueryState(key)?.isInvalidated).toBe(true);
+    });
   });
 });
 

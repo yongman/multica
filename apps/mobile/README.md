@@ -16,6 +16,15 @@ sections as Plan/Backlog, Todo, In Progress, In Review, Blocked and Done.
 Tap a status heading to collapse or expand its rows; its full count stays visible.
 Custom and cancelled statuses remain visible in their own sections.
 
+The issue header shows a live execution card for each active agent. Expand a
+card to inspect its latest six steps, including command/file summaries, tool
+parameters and results, thinking, output and errors. **Open full execution
+record** shows all saved steps; active and past rows in **Agent Runs** open the
+same screen. Cancelling a run remains a separate action. Records backfill when
+opened or reconnected, and live messages merge by sequence without replacing
+newer streamed steps. Long content is collapsed and credentials are redacted
+before display.
+
 ## Just want to use it on your phone? (no development)
 
 Multica isn't on the App Store yet — until that changes, anyone who wants it on their iPhone builds from source. One command:

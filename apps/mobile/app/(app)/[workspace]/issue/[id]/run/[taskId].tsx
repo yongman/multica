@@ -1,17 +1,19 @@
 import { ActivityIndicator, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
+import { redactSecrets } from "@multica/core/security/redact-secrets";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { RunTranscript } from "@/components/issue/run-transcript";
+import { RunCancelButton } from "@/components/issue/run-cancel-button";
 import { issueTasksOptions } from "@/data/queries/issues";
 import { runTranscriptMessagesOptions } from "@/data/queries/chat";
 import { useRunTranscriptRealtime } from "@/data/realtime/use-run-transcript-realtime";
 import { useActorLookup } from "@/data/use-actor-name";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { useT } from "@/lib/i18n";
-import { isRunTranscriptTaskId } from "@/lib/run-transcript";
+import { isCancellableRunStatus, isRunTranscriptTaskId } from "@/lib/run-transcript";
 
 export default function RunTranscriptRoute() {
   const params = useLocalSearchParams<{ id?: string; taskId?: string }>();
@@ -61,24 +63,31 @@ export default function RunTranscriptRoute() {
     return <StateMessage text={t("runs.transcript.missing")} />;
   }
 
-  const summary =
-    task.trigger_summary?.trim() || t("summary.direct");
+  const summary = redactSecrets(task.trigger_summary?.trim() || t("summary.direct"));
 
   return (
     <RunTranscript
       task={task}
       items={transcriptQuery.data ?? []}
       header={
-        <View className="flex-row items-start gap-3 rounded-lg bg-muted/40 px-3 py-3">
-          <ActorAvatar type="agent" id={task.agent_id} size={32} showPresence />
-          <View className="min-w-0 flex-1 gap-1">
-            <Text className="text-sm font-semibold text-foreground">
-              {getName("agent", task.agent_id)}
-            </Text>
-            <Text className="text-sm text-muted-foreground">{summary}</Text>
-            <Text className={statusClass(task.status)}>
-              {t(`runs.status.${task.status}`)}
-            </Text>
+        <View className="gap-3">
+          {transcriptQuery.isError ? (
+            <Button variant="outline" onPress={retry}>
+              <Text>{t("runs.transcript.load_error")} {t("runs.transcript.retry")}</Text>
+            </Button>
+          ) : null}
+          <View className="flex-row items-start gap-3 rounded-lg bg-muted/40 px-3 py-3">
+            <ActorAvatar type="agent" id={task.agent_id} size={32} showPresence />
+            <View className="min-w-0 flex-1 gap-1">
+              <Text className="text-sm font-semibold text-foreground">
+                {getName("agent", task.agent_id)}
+              </Text>
+              <Text className="text-sm text-muted-foreground">{summary}</Text>
+              <Text className={statusClass(task.status)}>
+                {t(`runs.status.${task.status}`)}
+              </Text>
+            </View>
+            {isCancellableRunStatus(task.status) ? <RunCancelButton taskId={task.id} issueId={issueId} /> : null}
           </View>
         </View>
       }

@@ -27,6 +27,7 @@ import { useWorkspaceStore } from "@/data/workspace-store";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
 import { useT } from "@/lib/i18n";
+import { RunActivity } from "./run-activity";
 
 interface Props {
   issueId: string;
@@ -62,28 +63,32 @@ export function AgentActivityRow({ issueId }: Props) {
   }
 
   return (
-    <Pressable
-      onPress={() => {
-        if (!wsSlug) return;
-        router.push({
-          pathname: "/[workspace]/issue/[id]/runs",
-          params: { workspace: wsSlug, id: issueId },
-        });
-      }}
-      className="flex-row items-center gap-2 -mx-2 px-2 py-2 rounded-lg active:bg-secondary"
-    >
-      {activeCount > 0 ? (
-        <ActiveContent
-          actors={activeTasks.map<StackActor>((t) => ({
-            type: "agent",
-            id: t.agent_id,
-          }))}
-        />
-      ) : (
-        <IdleContent count={pastCount} mutedFg={mutedFg} />
-      )}
-      <Ionicons name="chevron-forward" size={16} color={mutedFg} />
-    </Pressable>
+    <View className="gap-2">
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => {
+          if (!wsSlug) return;
+          router.push({
+            pathname: "/[workspace]/issue/[id]/runs",
+            params: { workspace: wsSlug, id: issueId },
+          });
+        }}
+        className="flex-row items-center gap-2 -mx-2 px-2 py-2 rounded-lg active:bg-secondary"
+      >
+        {activeCount > 0 ? (
+          <ActiveContent
+            actors={activeTasks.map<StackActor>((t) => ({
+              type: "agent",
+              id: t.agent_id,
+            }))}
+          />
+        ) : (
+          <IdleContent count={pastCount} mutedFg={mutedFg} />
+        )}
+        <Ionicons name="chevron-forward" size={16} color={mutedFg} />
+      </Pressable>
+      {activeTasks.map((task) => <RunActivity key={task.id} task={task} />)}
+    </View>
   );
 }
 
