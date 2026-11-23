@@ -73,11 +73,11 @@ describe("Markdown width and content contract", () => {
   });
 
   it.each([
-    ["comment", false, false, 24, 12],
-    ["selected comment", true, false, 24, 12],
-    ["description or assistant message", true, false, 24, 12],
-    ["compact user message", false, true, 20, 0],
-  ])("preserves selection and paragraph styles for a %s", (_name, selectable, compact, lineHeight, marginBottom) => {
+    ["comment props", false, false, 24, 12],
+    ["selected comment props", true, false, 24, 12],
+    ["reader props", true, false, 24, 12],
+    ["compact message props", false, true, 20, 0],
+  ])("preserves selection and paragraph styles with synthetic %s", (_name, selectable, compact, lineHeight, marginBottom) => {
     const tree = render(`Before\n\n\`\`\`text\n${longToken}\n\`\`\`\n\nAfter`, { selectable, compact });
     const [before, code, after] = tree.props.children;
     expect(tree.props.children.map((child) => child.type)).toEqual(["NativeMarkdown", "CodeBlock", "NativeMarkdown"]);

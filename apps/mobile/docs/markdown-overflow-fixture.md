@@ -11,6 +11,9 @@ width. Top-level code, wide tables, and display math must expose their last
 character through horizontal scrolling inside that width. Nested code uses
 the native wrapping fallback so lists/quotes keep their structure. Images must
 fit the body width. The HTML width below must not affect native layout.
+On Android, an inline formula wider than the space available on a fresh line
+must show its complete wrapping `$LaTeX$` source. Short formulas stay rendered;
+widening the host enough for a long formula must restore its math bitmap.
 
 Drag horizontally in both directions over wide blocks, then start a vertical
 drag over each block to scroll the page. Check narrow tables, stationary link
@@ -66,6 +69,15 @@ const value = "code start 0123456789 0123456789 0123456789 0123456789 0123456789
 | Narrow | Table |
 | ------ | ----- |
 | A      | B     |
+
+Short inline math stays rendered: $x+y$.
+
+Long inline math with 40 terms, between ordinary text:
+$x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x$.
+Every term and the closing delimiter must remain readable in a narrow comment.
+
+> The same inline formula inside an indented quote:
+> $x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x+x$.
 
 $$
 \frac{a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v+w+x+y+z}{1+2+3+4+5+6+7+8+9}

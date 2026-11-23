@@ -73,7 +73,8 @@ chose:
 | Prose (paragraphs, headings, lists, quotes, tables, inline code, links, strong/em) | enriched-markdown (path A) | Would otherwise need React tree → CJK + inline-code chip = 5-7 line breakage per chip (the 2026-05-09 incident) |
 | Fenced code block | own `CodeBlock` with one `<Text>` per line, token spans nested but **content is code only — no CJK paragraphs to trigger UAX #14**. Shiki for highlighting | Native rendering can't expose Shiki tokens; React tree of code-only doesn't trigger the CJK amplification of the nested-text bug |
 | Image | `expo-image` wrapped in `Pressable` for lightbox dispatch. **One element, no nested-text mixing** | RN `<Image>` can't be inline in `<Text>`; lightbox needs `Pressable` not addressable inside attributed string |
-| (future) LaTeX / Mermaid | not yet — when needed, separate component running Expo DOM Components | path C is the only one that gets these for free, but the WebView penalty isn't worth paying for prose |
+| Inline / display LaTeX | enriched-markdown's native math backend; Android oversized inline formulas use wrapping source fallback | Keeps formulas native without adding a WebView to prose |
+| (future) Mermaid | when needed, a separate component running Expo DOM Components | Avoids adding WebView startup cost to ordinary prose |
 
 ### Marked@18 is used as a **lexer only**
 
@@ -132,7 +133,7 @@ upgrade because newly-added color fields may ship light-mode defaults.
   hidden-default trap re-emerges on every enriched upgrade
 - Code blocks nested in a list item stay with the enriched prose stream
   (don't get Shiki) — top-level code is the >95% case, acceptable
-- LaTeX / Mermaid not currently supported
+- Mermaid is not rendered natively; LaTeX depends on enriched-markdown's native math backend
 
 ### Known limitations and mitigations
 
@@ -157,8 +158,20 @@ measurement paths within the available width:
 - Bound cached/fallback intrinsic width by the input constraint, as the GFM
   split path already does. An indivisible replacement span can have an
   intrinsic width larger than the layout, and that width must not enlarge
-  the Yoga viewport. This does not make arbitrary inline replacement spans
-  breakable; wide display math uses its existing native scroll container.
+  the Yoga viewport.
+
+**Android inline math.** A `MathInlineSpan` bitmap cannot split across lines.
+When it exceeds the width of a fresh line (after text padding and list/quote
+leading margins), the native text view displays its complete `$LaTeX$` source
+as ordinary wrapping text, retaining the formula's font size and theme color
+even in a math-only paragraph. Short formulas still use their math bitmaps.
+The original Spannable is retained, so growing the viewport restores the
+bitmap instead of keeping a permanent source downgrade. The same width
+adapter runs on background measurement placeholders and on displayed text,
+including table cell height measurement, to keep the height supplied to
+Fabric consistent with the fallback. This is a native Android rule; the
+JavaScript Markdown source and the iOS renderer are unchanged. Wide display
+math continues to use its existing horizontal scroll container.
 
 The rendering routes remain:
 
@@ -168,6 +181,7 @@ The rendering routes remain:
 | Quotes, lists, task lists, code nested inside lists/quotes | Native leading margins reduce the space available to text; nested code keeps its existing wrapping fallback |
 | Top-level fenced or indented code | Full source inside a bounded React horizontal ScrollView |
 | Wide/narrow GFM tables and display math | Existing native `OverflowHorizontalScrollView`; drag arbitration is unchanged |
+| Android inline math | Fitting bitmaps stay inline; oversized bitmaps become complete wrapping LaTeX source |
 | Top-level Markdown/HTML images | `expo-image` at body-relative width, with aspect ratio and lightbox preserved |
 | Embedded HTML | Preprocessing strips layout tags/attributes and retains text/images; comment bodies do not host WebViews |
 
@@ -176,10 +190,24 @@ and oversized-span measurements, actual `EnrichedMarkdownInternalText`
 wrapping at 320/360/412 dp minus card padding and 0/24/48 dp reply indentation,
 and reflow of large selectable text. Its text spans model links, code,
 headings, and list/quote margins; it does not execute the JNI md4c parser or
-React Native Yoga. Vitest covers real preprocessing/segment routing and
-comment/description/chat prop wiring. Neither suite replaces Android/iOS
-device testing. Use [the complete fixture](markdown-overflow-fixture.md) for
-both themes, selection, rotation, large fonts, images, and nested gestures.
+React Native Yoga. `MarkdownGfmLayoutTest` calls the public measurement entry
+with GFM splitting enabled, uses the returned height as the exact TextView
+allocation, and checks complete text, line bounds, and last-line visibility.
+It finds a one-pixel line-wrap threshold to exercise the fractional GFM width
+path directly, and covers oversized math, leading margins, restoration at a
+wider width, fitting formulas, source font/color, and table cells. The
+unavailable md4c JNI parser and math-metrics backend are replaced by
+deterministic AST/metrics shadows; native span rendering, GFM measurement,
+and TextView layout are real.
+
+Vitest covers real preprocessing/segment routing and headless root/descendant
+`CommentCard` wiring. `markdown.test.ts` directly calls `Markdown` with
+synthetic `selectable`/`compact` props representing comment, reader, and
+compact-message contracts. It does not mount `IssueDescription`,
+`ChatTimeline`, or `ChatMessageList`, and does not verify those screens'
+rendered layout. Neither suite replaces Android/iOS device testing. Use
+[the complete fixture](markdown-overflow-fixture.md) for both themes,
+selection, rotation, large fonts, images, and nested gestures.
 
 **Android horizontal overflow inside a vertical list.** Native Markdown tables
 and display math use the patched `OverflowHorizontalScrollView` from
@@ -191,7 +219,7 @@ returns to the parent list.
 After Android prebuild, run the API 32 Robolectric tests from `apps/mobile/android`:
 
 ```bash
-./gradlew :react-native-enriched-markdown:testDebugUnitTest --tests '*OverflowHorizontalScrollViewTest' --tests '*MarkdownWidthTest'
+./gradlew :react-native-enriched-markdown:testDebugUnitTest --tests '*OverflowHorizontalScrollViewTest' --tests '*MarkdownWidthTest' --tests '*MarkdownGfmLayoutTest'
 ```
 
 For regression testing, paste this fixture into a Markdown attachment, an issue
