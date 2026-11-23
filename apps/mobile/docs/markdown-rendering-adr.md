@@ -173,6 +173,14 @@ Fabric consistent with the fallback. This is a native Android rule; the
 JavaScript Markdown source and the iOS renderer are unchanged. Wide display
 math continues to use its existing horizontal scroll container.
 
+Timeout/error math metrics carry an explicit estimate flag through the
+background placeholder. Their width is capped at `20 * fontSize` and cannot
+prove that the real bitmap fits. Such placeholders always measure the complete
+wrapping source, reserving its height even when the capped width fits. Exact
+metrics still use the normal width check, so short formulas retain bitmap
+rendering. A regression test uses the real helper timeout on a worker thread
+and replays the GFM allocation at 320px against a 900px display bitmap.
+
 The rendering routes remain:
 
 | Content | Width behavior |
@@ -196,9 +204,10 @@ allocation, and checks complete text, line bounds, and last-line visibility.
 It finds a one-pixel line-wrap threshold to exercise the fractional GFM width
 path directly, and covers oversized math, leading margins, restoration at a
 wider width, fitting formulas, source font/color, and table cells. The
-unavailable md4c JNI parser and math-metrics backend are replaced by
-deterministic AST/metrics shadows; native span rendering, GFM measurement,
-and TextView layout are real.
+unavailable md4c JNI parser is replaced by a deterministic AST shadow. Most
+math cases use a deterministic metrics shadow; the timeout regression runs the
+real `MathMeasureHelper` with its main looper paused. Native span rendering,
+GFM measurement, and TextView layout are real.
 
 Vitest covers real preprocessing/segment routing and headless root/descendant
 `CommentCard` wiring. `markdown.test.ts` directly calls `Markdown` with

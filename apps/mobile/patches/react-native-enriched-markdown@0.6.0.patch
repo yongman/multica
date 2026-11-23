@@ -1,5 +1,5 @@
 diff --git a/android/build.gradle b/android/build.gradle
-index f86640c..5f50e2c 100644
+index f86640c79..5f50e2c49 100644
 --- a/android/build.gradle
 +++ b/android/build.gradle
 @@ -76,6 +76,11 @@ android {
@@ -24,7 +24,7 @@ index f86640c..5f50e2c 100644
    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
    // Baseline Profile installer for AOT compilation hints
 diff --git a/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownInternalText.kt b/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownInternalText.kt
-index 98fb639..a46f3ab 100644
+index 98fb639bb..a46f3ab43 100644
 --- a/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownInternalText.kt
 +++ b/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownInternalText.kt
 @@ -62,7 +62,7 @@ class EnrichedMarkdownInternalText
@@ -37,7 +37,7 @@ index 98fb639..a46f3ab 100644
        if (movementMethod !is LinkLongPressMovementMethod) {
          movementMethod = LinkLongPressMovementMethod.createInstance()
 diff --git a/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownText.kt b/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownText.kt
-index 5104ff8..187d0f6 100644
+index 5104ff805..187d0f679 100644
 --- a/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownText.kt
 +++ b/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownText.kt
 @@ -239,7 +239,7 @@ class EnrichedMarkdownText
@@ -50,7 +50,7 @@ index 5104ff8..187d0f6 100644
        if (movementMethod !is LinkLongPressMovementMethod) {
          movementMethod = LinkLongPressMovementMethod.createInstance()
 diff --git a/android/src/main/java/com/swmansion/enriched/markdown/MeasurementStore.kt b/android/src/main/java/com/swmansion/enriched/markdown/MeasurementStore.kt
-index a6490d1..37b973c 100644
+index a6490d127..f5689faab 100644
 --- a/android/src/main/java/com/swmansion/enriched/markdown/MeasurementStore.kt
 +++ b/android/src/main/java/com/swmansion/enriched/markdown/MeasurementStore.kt
 @@ -28,10 +28,12 @@ import com.swmansion.enriched.markdown.utils.common.getBooleanOrDefault
@@ -128,8 +128,16 @@ index a6490d1..37b973c 100644
          PixelUtil.toDIPFromPixel(layout.height.toFloat()),
        )
 
+@@ -624,6 +629,7 @@ object MeasurementStore {
+           .toInt(),
+       ascent = estimatedHeight * 0.7f,
+       descent = estimatedHeight * 0.3f,
++      isEstimated = true,
+     )
+   }
+ }
 diff --git a/android/src/main/java/com/swmansion/enriched/markdown/accessibility/AccessibleMarkdownTextView.kt b/android/src/main/java/com/swmansion/enriched/markdown/accessibility/AccessibleMarkdownTextView.kt
-index bf9ffc0..ae78ceb 100644
+index bf9ffc01e..ae78ceb44 100644
 --- a/android/src/main/java/com/swmansion/enriched/markdown/accessibility/AccessibleMarkdownTextView.kt
 +++ b/android/src/main/java/com/swmansion/enriched/markdown/accessibility/AccessibleMarkdownTextView.kt
 @@ -6,6 +6,7 @@ import android.util.AttributeSet
@@ -183,15 +191,16 @@ index bf9ffc0..ae78ceb 100644
        accessibilityHelper.dispatchHoverEvent(event) || super.dispatchHoverEvent(event)
 diff --git a/android/src/main/java/com/swmansion/enriched/markdown/spans/InlineMathReplacement.kt b/android/src/main/java/com/swmansion/enriched/markdown/spans/InlineMathReplacement.kt
 new file mode 100644
-index 0000000..0575e89
+index 000000000..a665555a0
 --- /dev/null
 +++ b/android/src/main/java/com/swmansion/enriched/markdown/spans/InlineMathReplacement.kt
-@@ -0,0 +1,12 @@
+@@ -0,0 +1,13 @@
 +package com.swmansion.enriched.markdown.spans
 +
 +/** Shared by the optional math bitmap and its background measurement placeholder. */
 +interface InlineMathReplacement {
 +  val source: InlineMathSource
++  val isMeasurementEstimated: Boolean get() = false
 +}
 +
 +data class InlineMathSource(
@@ -199,12 +208,28 @@ index 0000000..0575e89
 +  val fontSize: Float,
 +  val color: Int,
 +)
+diff --git a/android/src/main/java/com/swmansion/enriched/markdown/spans/MathModels.kt b/android/src/main/java/com/swmansion/enriched/markdown/spans/MathModels.kt
+index a011cba4a..a4fd175f4 100644
+--- a/android/src/main/java/com/swmansion/enriched/markdown/spans/MathModels.kt
++++ b/android/src/main/java/com/swmansion/enriched/markdown/spans/MathModels.kt
+@@ -11,8 +11,10 @@ data class MathMeasureRequest(
+   val mode: MathRenderMode = MathRenderMode.Text,
+ )
+
+-data class MathMetrics(
++data class MathMetrics @JvmOverloads constructor(
+   val width: Int,
+   val ascent: Float,
+   val descent: Float,
++  // Timeout/error estimates are capped heuristics, not proof a bitmap fits.
++  val isEstimated: Boolean = false,
+ )
 diff --git a/android/src/main/java/com/swmansion/enriched/markdown/utils/text/extensions/InlineMathWidth.kt b/android/src/main/java/com/swmansion/enriched/markdown/utils/text/extensions/InlineMathWidth.kt
 new file mode 100644
-index 0000000..0d29d1f
+index 000000000..4bc14c7f2
 --- /dev/null
 +++ b/android/src/main/java/com/swmansion/enriched/markdown/utils/text/extensions/InlineMathWidth.kt
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,76 @@
 +package com.swmansion.enriched.markdown.utils.text.extensions
 +
 +import android.text.SpannableStringBuilder
@@ -234,6 +259,7 @@ index 0000000..0d29d1f
 +      .sortedByDescending { original.getSpanStart(it) }
 +  var fitted: SpannableStringBuilder? = null
 +  for (span in spans) {
++    val math = span as InlineMathReplacement
 +    val start = original.getSpanStart(span)
 +    val end = original.getSpanEnd(span)
 +    val margin =
@@ -241,9 +267,12 @@ index 0000000..0d29d1f
 +        .getSpans(start, end, LeadingMarginSpan::class.java)
 +        .sumOf { maxOf(it.getLeadingMargin(true), it.getLeadingMargin(false)) }
 +    val availableWidth = (width - margin).coerceAtLeast(1)
-+    if (span.getSize(paint, original, start, end, null) > availableWidth) {
++    // A timeout estimate can be narrower than the real bitmap (its width is
++    // capped at 20 * fontSize). Reserve wrapping-source height in that case
++    // even if the estimated width appears to fit the viewport.
++    if (math.isMeasurementEstimated || span.getSize(paint, original, start, end, null) > availableWidth) {
 +      val result = fitted ?: SpannableStringBuilder(original).also { fitted = it }
-+      val source = (span as InlineMathReplacement).source
++      val source = math.source
 +      val sourceText = "\$${source.latex}\$"
 +      // Replacing the entire placeholder removes exclusive spans on that
 +      // range, including math-only list markers and paragraph line height.
@@ -278,7 +307,7 @@ index 0000000..0d29d1f
 +  return fitted ?: this
 +}
 diff --git a/android/src/main/java/com/swmansion/enriched/markdown/utils/text/extensions/SpannableExtensions.kt b/android/src/main/java/com/swmansion/enriched/markdown/utils/text/extensions/SpannableExtensions.kt
-index bcf8738..f0868ae 100644
+index bcf87380c..f0868ae14 100644
 --- a/android/src/main/java/com/swmansion/enriched/markdown/utils/text/extensions/SpannableExtensions.kt
 +++ b/android/src/main/java/com/swmansion/enriched/markdown/utils/text/extensions/SpannableExtensions.kt
 @@ -4,6 +4,8 @@ import android.content.Context
@@ -310,7 +339,7 @@ index bcf8738..f0868ae 100644
      }
 diff --git a/android/src/main/java/com/swmansion/enriched/markdown/views/OverflowHorizontalScrollView.kt b/android/src/main/java/com/swmansion/enriched/markdown/views/OverflowHorizontalScrollView.kt
 new file mode 100644
-index 0000000..3a9d5c5
+index 000000000..3a9d5c5aa
 --- /dev/null
 +++ b/android/src/main/java/com/swmansion/enriched/markdown/views/OverflowHorizontalScrollView.kt
 @@ -0,0 +1,90 @@
@@ -405,7 +434,7 @@ index 0000000..3a9d5c5
 +    drag != Drag.NONE && super.onTouchEvent(event)
 +}
 diff --git a/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt b/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt
-index 8ce6f79..0f989b6 100644
+index 8ce6f79af..0f989b6b8 100644
 --- a/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt
 +++ b/android/src/main/java/com/swmansion/enriched/markdown/views/TableContainerView.kt
 @@ -17,7 +17,6 @@ import android.text.style.MetricAffectingSpan
@@ -470,10 +499,10 @@ index 8ce6f79..0f989b6 100644
                    .build()
                ceil(layout.height.toFloat()) + verticalPadding
 diff --git a/android/src/math/java/com/swmansion/enriched/markdown/spans/MathInlinePlaceholderSpan.kt b/android/src/math/java/com/swmansion/enriched/markdown/spans/MathInlinePlaceholderSpan.kt
-index d930812..9723625 100644
+index d93081286..2ec8800b2 100644
 --- a/android/src/math/java/com/swmansion/enriched/markdown/spans/MathInlinePlaceholderSpan.kt
 +++ b/android/src/math/java/com/swmansion/enriched/markdown/spans/MathInlinePlaceholderSpan.kt
-@@ -8,7 +8,9 @@ import kotlin.math.roundToInt
+@@ -8,7 +8,11 @@ import kotlin.math.roundToInt
  /** Holds pre-computed math metrics for background-thread measurement. */
  class MathInlinePlaceholderSpan(
    private val metrics: MathMetrics,
@@ -481,11 +510,13 @@ index d930812..9723625 100644
 +  override val source: InlineMathSource,
 +) : ReplacementSpan(),
 +  InlineMathReplacement {
++  override val isMeasurementEstimated: Boolean get() = metrics.isEstimated
++
    override fun getSize(
      paint: Paint,
      text: CharSequence?,
 diff --git a/android/src/math/java/com/swmansion/enriched/markdown/spans/MathInlineSpan.kt b/android/src/math/java/com/swmansion/enriched/markdown/spans/MathInlineSpan.kt
-index 6215420..f81ff68 100644
+index 62154208b..f81ff68b9 100644
 --- a/android/src/math/java/com/swmansion/enriched/markdown/spans/MathInlineSpan.kt
 +++ b/android/src/math/java/com/swmansion/enriched/markdown/spans/MathInlineSpan.kt
 @@ -14,7 +14,9 @@ class MathInlineSpan(
@@ -499,8 +530,20 @@ index 6215420..f81ff68 100644
    private var cachedBitmap: Bitmap? = null
    private var cachedWidth = 0
    private var mathAscent = 0f
+diff --git a/android/src/math/java/com/swmansion/enriched/markdown/spans/MathMeasureHelper.kt b/android/src/math/java/com/swmansion/enriched/markdown/spans/MathMeasureHelper.kt
+index e5a3dd00c..babc041a0 100644
+--- a/android/src/math/java/com/swmansion/enriched/markdown/spans/MathMeasureHelper.kt
++++ b/android/src/math/java/com/swmansion/enriched/markdown/spans/MathMeasureHelper.kt
+@@ -90,6 +90,7 @@ object MathMeasureHelper {
+           .toInt(),
+       ascent = h * 0.7f,
+       descent = h * 0.3f,
++      isEstimated = true,
+     )
+   }
+
 diff --git a/android/src/math/java/com/swmansion/enriched/markdown/views/MathContainerView.kt b/android/src/math/java/com/swmansion/enriched/markdown/views/MathContainerView.kt
-index 668041f..2252324 100644
+index 668041f12..225232401 100644
 --- a/android/src/math/java/com/swmansion/enriched/markdown/views/MathContainerView.kt
 +++ b/android/src/math/java/com/swmansion/enriched/markdown/views/MathContainerView.kt
 @@ -8,7 +8,6 @@ import android.view.View
@@ -522,10 +565,10 @@ index 668041f..2252324 100644
    override val segmentMarginTop: Int get() = mathStyle.marginTop.toInt()
 diff --git a/android/src/test/java/com/swmansion/enriched/markdown/MarkdownGfmLayoutTest.java b/android/src/test/java/com/swmansion/enriched/markdown/MarkdownGfmLayoutTest.java
 new file mode 100644
-index 0000000..6f23e00
+index 000000000..5c29040e9
 --- /dev/null
 +++ b/android/src/test/java/com/swmansion/enriched/markdown/MarkdownGfmLayoutTest.java
-@@ -0,0 +1,349 @@
+@@ -0,0 +1,395 @@
 +package com.swmansion.enriched.markdown;
 +
 +import static org.junit.Assert.assertEquals;
@@ -556,6 +599,7 @@ index 0000000..6f23e00
 +import com.swmansion.enriched.markdown.spans.MathMeasureHelper;
 +import com.swmansion.enriched.markdown.spans.MathMeasureRequest;
 +import com.swmansion.enriched.markdown.spans.MathMetrics;
++import com.swmansion.enriched.markdown.spans.MathRenderMode;
 +import com.swmansion.enriched.markdown.styles.StyleConfig;
 +import com.swmansion.enriched.markdown.views.TableContainerView;
 +import java.lang.reflect.Constructor;
@@ -564,6 +608,9 @@ index 0000000..6f23e00
 +import java.util.Arrays;
 +import java.util.Collections;
 +import java.util.List;
++import java.util.concurrent.Callable;
++import java.util.concurrent.FutureTask;
++import java.util.concurrent.TimeUnit;
 +import org.junit.Before;
 +import org.junit.Test;
 +import org.junit.runner.RunWith;
@@ -577,7 +624,7 @@ index 0000000..6f23e00
 +
 +@RunWith(RobolectricTestRunner.class)
 +@Config(sdk = 32, manifest = Config.NONE, qualifiers = "mdpi",
-+    shadows = {MarkdownGfmLayoutTest.ShadowParser.class, MarkdownGfmLayoutTest.ShadowMathMeasureHelper.class})
++    shadows = {MarkdownGfmLayoutTest.ShadowParser.class})
 +@GraphicsMode(GraphicsMode.Mode.NATIVE)
 +public class MarkdownGfmLayoutTest {
 +  private final Context context = RuntimeEnvironment.getApplication();
@@ -592,6 +639,7 @@ index 0000000..6f23e00
 +  }
 +
 +  @Test
++  @Config(shadows = ShadowMathMeasureHelper.class)
 +  public void oversizedInlineBitmapFallsBackToCompleteSourceWithinAllocatedGfmHeight() throws Exception {
 +    String markdown = "Before $" + longMath + "$ after";
 +    SpannableString source = render(markdown);
@@ -613,6 +661,7 @@ index 0000000..6f23e00
 +  }
 +
 +  @Test
++  @Config(shadows = ShadowMathMeasureHelper.class)
 +  public void fittingFormulaKeepsItsBitmapAndFallbackReversesWhenWidthGrows() throws Exception {
 +    SpannableString source = render("$" + longMath + "$");
 +    seedMathBitmaps(source);
@@ -633,6 +682,7 @@ index 0000000..6f23e00
 +  }
 +
 +  @Test
++  @Config(shadows = ShadowMathMeasureHelper.class)
 +  public void inlineFallbackAccountsForLeadingMarginsAndPreservesSurroundingText() throws Exception {
 +    String markdown = "Before $x+y$ between $" + longMath + "$ after";
 +    SpannableString source = render(markdown);
@@ -682,6 +732,7 @@ index 0000000..6f23e00
 +  }
 +
 +  @Test
++  @Config(shadows = ShadowMathMeasureHelper.class)
 +  public void tableCellMeasurementAndDisplayUseTheSameSourceFallback() throws Exception {
 +    MarkdownASTNode math = ShadowParser.node(NodeType.LatexMathInline, longMath, Collections.emptyList());
 +    MarkdownASTNode cell = ShadowParser.node(NodeType.TableCell, "", Collections.singletonList(math));
@@ -713,6 +764,7 @@ index 0000000..6f23e00
 +  }
 +
 +  @Test
++  @Config(shadows = ShadowMathMeasureHelper.class)
 +  public void mathOnlySourceRetainsItsThemeColorAndScaledFontSize() throws Exception {
 +    SpannableString source = new SpannableString("\uFFFC");
 +    source.setSpan(new MathInlineSpan(context, longMath, 28, Color.WHITE),
@@ -725,6 +777,43 @@ index 0000000..6f23e00
 +    assertEquals(Color.WHITE, fallback.getSpans(0, view.length(), ForegroundColorSpan.class)[0].getForegroundColor());
 +    assertEquals(28, fallback.getSpans(0, view.length(), AbsoluteSizeSpan.class)[0].getSize());
 +    assertFullyVisible(view);
++  }
++
++  @Test
++  public void realTimeoutEstimateReservesHeightForWiderDisplayBitmap() throws Exception {
++    // The Robolectric main looper stays paused while the worker waits on the
++    // real helper. No math-metrics shadow or fabricated estimate is used here.
++    MathMetrics estimate = onBackground(() -> MathMeasureHelper.measureOnMainThread(
++        context, Collections.singletonList(new MathMeasureRequest(14, longMath, MathRenderMode.Text)))).get(0);
++    assertEquals("The production timeout estimator caps this formula at 20 * 14px",
++        280, estimate.getWidth());
++    assertTrue("Timeout metrics must retain their uncertainty", estimate.isEstimated());
++    String markdown = "$" + longMath + "$";
++    SpannableString source = render(markdown);
++    seedMathBitmaps(source);
++    EnrichedMarkdownInternalText view = view(source);
++    int requiredHeight = naturalHeight(view, 320);
++    assertEquals(markdown, view.getText().toString());
++    assertEquals(48, requiredHeight);
++
++    int allocatedHeight = onBackground(() -> measureGfm(markdown, 320));
++    assertTrue("Timeout measurement allocated " + allocatedHeight + "px for " + requiredHeight + "px of source",
++        allocatedHeight >= requiredHeight);
++    layout(view, 320, allocatedHeight);
++    assertFullyVisible(view);
++  }
++
++  private <T> T onBackground(Callable<T> action) throws Exception {
++    FutureTask<T> result = new FutureTask<>(action);
++    Thread worker = new Thread(result, "markdown-timeout-regression");
++    worker.start();
++    try {
++      return result.get(10, TimeUnit.SECONDS);
++    } finally {
++      worker.interrupt();
++      worker.join(1000);
++      assertFalse("The regression worker must finish within this test", worker.isAlive());
++    }
 +  }
 +
 +  private int measureGfm(String markdown, float width) {
@@ -877,7 +966,7 @@ index 0000000..6f23e00
 +}
 diff --git a/android/src/test/java/com/swmansion/enriched/markdown/MarkdownWidthTest.java b/android/src/test/java/com/swmansion/enriched/markdown/MarkdownWidthTest.java
 new file mode 100644
-index 0000000..8d35f48
+index 000000000..8d35f4872
 --- /dev/null
 +++ b/android/src/test/java/com/swmansion/enriched/markdown/MarkdownWidthTest.java
 @@ -0,0 +1,148 @@
@@ -1031,7 +1120,7 @@ index 0000000..8d35f48
 +}
 diff --git a/android/src/test/java/com/swmansion/enriched/markdown/views/OverflowHorizontalScrollViewTest.java b/android/src/test/java/com/swmansion/enriched/markdown/views/OverflowHorizontalScrollViewTest.java
 new file mode 100644
-index 0000000..16e3e4d
+index 000000000..16e3e4df8
 --- /dev/null
 +++ b/android/src/test/java/com/swmansion/enriched/markdown/views/OverflowHorizontalScrollViewTest.java
 @@ -0,0 +1,259 @@
