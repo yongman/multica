@@ -153,8 +153,8 @@ export function CommentCard({
   }
 
   return (
-    <View className="px-4">
-      <View className="rounded-xl" style={continuousCorners}>
+    <View className="min-w-0 max-w-full px-4">
+      <View className="min-w-0 max-w-full rounded-xl" style={continuousCorners}>
         {/* Bubble uses `surface-1` (L 98%) — extremely subtle elevation
          *  above the page, visible mostly through the rounded edge rather
          *  than the fill (iOS settings cell feel; see Refactoring UI #4
@@ -170,7 +170,7 @@ export function CommentCard({
          *  body — mirrors web's muted resolved card visual. */}
         <View
           className={cn(
-            "bg-surface-1 rounded-xl px-4 py-3 gap-3 border-2 border-transparent transition-colors",
+            "min-w-0 max-w-full bg-surface-1 rounded-xl px-4 py-3 gap-3 border-2 border-transparent transition-colors",
             resolved && "opacity-70",
             isHighlighted && "border-primary/30",
             isSelectingHere && "bg-primary/5 border-primary/30",
@@ -195,7 +195,7 @@ export function CommentCard({
            *  packages/views/issues/components/comment-card.tsx. A deleted ROOT
            *  still renders its placeholder — it heads the thread. */}
           {visibleReplies.map((reply) => (
-            <View key={reply.id} className="border-t border-border/60 pt-3">
+            <View key={reply.id} className="min-w-0 max-w-full border-t border-border/60 pt-3">
               <CommentBody
                 entry={reply}
                 issueId={issueId}
@@ -531,7 +531,7 @@ function CommentBody({
   }
 
   const body = (
-    <View className="gap-2">
+    <View className="min-w-0 max-w-full gap-2">
       <View className="flex-row items-center gap-2">
         <ActorAvatar
           type={entry.actor_type as "member" | "agent"}
@@ -541,8 +541,8 @@ function CommentBody({
           size={24}
           showPresence
         />
-        <Text className="text-sm font-medium text-foreground">{name}</Text>
-        <Text className="text-xs text-muted-foreground">
+        <Text className="min-w-0 shrink text-sm font-medium text-foreground" numberOfLines={1}>{name}</Text>
+        <Text className="shrink text-xs text-muted-foreground">
           · {timeAgo(entry.created_at)}
           {edited ? " · (edited)" : ""}
         </Text>
@@ -577,7 +577,7 @@ function CommentBody({
   if (isSelecting) return body;
 
   return (
-    <Pressable onLongPress={longPress.onLongPress} delayLongPress={500}>
+    <Pressable className="min-w-0 max-w-full" onLongPress={longPress.onLongPress} delayLongPress={500}>
       {body}
     </Pressable>
   );

@@ -70,7 +70,7 @@ export function MarkdownImage({ uri, attachments }: Props) {
   }, [resolvedUri]);
 
   return (
-    <Pressable onPress={() => open(source, sequence)}>
+    <Pressable className="min-w-0 max-w-full" onPress={() => open(source, sequence)}>
       <View className="rounded-lg overflow-hidden bg-muted">
         <ExpoImage
           source={resolvedUri ? { uri: resolvedUri } : undefined}

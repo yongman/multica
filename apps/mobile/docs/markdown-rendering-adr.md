@@ -136,6 +136,51 @@ upgrade because newly-added color fields may ship light-mode defaults.
 
 ### Known limitations and mitigations
 
+**Markdown viewport width.** Comment bodies (root and flattened descendant
+replies), the shared Markdown wrapper, and each native prose island have an
+explicit `minWidth: 0` / `maxWidth: "100%"` boundary. Native prose stretches to
+the width its host provides; it does not set a fixed screen width, so padded
+comments, narrower reply hosts, descriptions, and compact chat bubbles can
+reuse it. Author names can shrink independently of the avatar and timestamp.
+The code block clips its *scroll viewport*, with the complete source still
+inside the horizontal ScrollView. Image dimensions remain relative to the
+body, regardless of authored HTML dimensions. Prose is not truncated, and no
+invisible break characters are inserted into text, link destinations, or copy
+contents.
+
+The Android enriched-markdown patch also keeps all three `StaticLayout`
+measurement paths within the available width:
+
+- Round the available pixel width **down** before laying out text. Rounding a
+  fractional constraint up can measure fewer lines than fit when Fabric lays
+  out the integer-width TextView.
+- Bound cached/fallback intrinsic width by the input constraint, as the GFM
+  split path already does. An indivisible replacement span can have an
+  intrinsic width larger than the layout, and that width must not enlarge
+  the Yoga viewport. This does not make arbitrary inline replacement spans
+  breakable; wide display math uses its existing native scroll container.
+
+The rendering routes remain:
+
+| Content | Width behavior |
+| --- | --- |
+| Paragraphs, URLs/paths, inline code, mentions, mixed emphasis, headings | Native text wraps inside the prose viewport; source and link targets are unchanged |
+| Quotes, lists, task lists, code nested inside lists/quotes | Native leading margins reduce the space available to text; nested code keeps its existing wrapping fallback |
+| Top-level fenced or indented code | Full source inside a bounded React horizontal ScrollView |
+| Wide/narrow GFM tables and display math | Existing native `OverflowHorizontalScrollView`; drag arbitration is unchanged |
+| Top-level Markdown/HTML images | `expo-image` at body-relative width, with aspect ratio and lightbox preserved |
+| Embedded HTML | Preprocessing strips layout tags/attributes and retains text/images; comment bodies do not host WebViews |
+
+`MarkdownWidthTest` uses API 32 Robolectric native graphics to check fractional
+and oversized-span measurements, actual `EnrichedMarkdownInternalText`
+wrapping at 320/360/412 dp minus card padding and 0/24/48 dp reply indentation,
+and reflow of large selectable text. Its text spans model links, code,
+headings, and list/quote margins; it does not execute the JNI md4c parser or
+React Native Yoga. Vitest covers real preprocessing/segment routing and
+comment/description/chat prop wiring. Neither suite replaces Android/iOS
+device testing. Use [the complete fixture](markdown-overflow-fixture.md) for
+both themes, selection, rotation, large fonts, images, and nested gestures.
+
 **Android horizontal overflow inside a vertical list.** Native Markdown tables
 and display math use the patched `OverflowHorizontalScrollView` from
 `react-native-enriched-markdown`. Overflowing blocks use Android nested
@@ -146,7 +191,7 @@ returns to the parent list.
 After Android prebuild, run the API 32 Robolectric tests from `apps/mobile/android`:
 
 ```bash
-./gradlew :react-native-enriched-markdown:testDebugUnitTest --tests '*OverflowHorizontalScrollViewTest'
+./gradlew :react-native-enriched-markdown:testDebugUnitTest --tests '*OverflowHorizontalScrollViewTest' --tests '*MarkdownWidthTest'
 ```
 
 For regression testing, paste this fixture into a Markdown attachment, an issue
