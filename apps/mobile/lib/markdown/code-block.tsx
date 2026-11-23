@@ -105,7 +105,7 @@ export function CodeBlock({ code, lang, selectable = true }: Props) {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={{ flexGrow: 0 }}
+        style={{ flexGrow: 0, minWidth: 0, maxWidth: "100%" }}
       >
         {lines ? (
           <HighlightedCode lines={lines} selectable={selectable} />

@@ -41,6 +41,7 @@ import { attachmentSource, selectedAttachmentId } from "@/lib/attachment-source"
  */
 import { memo, useCallback, useMemo } from "react";
 import { Linking, View } from "react-native";
+import type { ViewStyle } from "react-native";
 import { router } from "expo-router";
 import { EnrichedMarkdownText } from "react-native-enriched-markdown";
 import type { Attachment } from "@multica/core/types";
@@ -50,6 +51,14 @@ import { useMarkdownStyle } from "./markdown-style";
 import { splitMarkdown } from "./split-markdown";
 import { CodeBlock } from "./code-block";
 import { MarkdownImage } from "./markdown-image";
+
+// Constrain the native viewport, while letting short chat bubbles size to
+// their content. A fixed width here would expand every compact bubble.
+const PROSE_CONTAINER_STYLE: ViewStyle = {
+  minWidth: 0,
+  maxWidth: "100%",
+  alignSelf: "stretch",
+};
 
 interface Props {
   content: string;
@@ -189,13 +198,14 @@ export const Markdown = memo(function Markdown({
     // adjacent `marginVertical` siblings collapse closer than the sum
     // would suggest — `gap` is layout-level spacing that doesn't depend
     // on margin behaviour.
-    <View className="gap-3">
+    <View className="min-w-0 max-w-full gap-3">
       {segments.map((seg, i) => {
         switch (seg.type) {
           case "prose":
             return (
               <EnrichedMarkdownText
                 key={i}
+                containerStyle={PROSE_CONTAINER_STYLE}
                 flavor="github"
                 markdown={seg.content}
                 markdownStyle={markdownStyle}

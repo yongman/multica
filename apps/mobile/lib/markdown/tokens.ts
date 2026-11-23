@@ -20,7 +20,7 @@ export const CODE_BLOCK_TEXT_CLASS =
 // Vertical breathing room outside the block is handled by the parent
 // `<View className="gap-3">` in `markdown.tsx`, not per-child margin.
 export const CODE_BLOCK_CONTAINER_CLASS =
-  "bg-code-surface border border-border rounded-lg px-3 py-2";
+  "min-w-0 max-w-full overflow-hidden bg-code-surface border border-border rounded-lg px-3 py-2";
 // No `uppercase tracking-wide` — those turn "ts" into "T S" which reads as
 // a label-strip / advertising banner and competes with the code itself for
 // attention. Lowercase muted text is the GitHub Mobile / Notion iOS pattern.
