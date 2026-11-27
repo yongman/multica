@@ -73,7 +73,7 @@ export default function TabsLayout() {
           tabBarActiveTintColor: theme.foreground,
           tabBarInactiveTintColor: theme.mutedForeground,
           tabBarStyle: { backgroundColor: theme.background },
-          tabBarLabelStyle: { fontSize: 11, marginHorizontal: -3 },
+          tabBarLabelStyle: { fontSize: 10 },
           tabBarHideOnKeyboard: Platform.OS === "android",
         }}
       >
