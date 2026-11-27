@@ -1594,7 +1594,7 @@ diff --git a/android/src/main/java/com/swmansion/enriched/markdown/views/Horizon
 new file mode 100644
 --- /dev/null
 +++ b/android/src/main/java/com/swmansion/enriched/markdown/views/HorizontalScrollGesture.kt
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,138 @@
 +package com.swmansion.enriched.markdown.views
 +
 +import android.view.MotionEvent
@@ -1689,14 +1689,41 @@ new file mode 100644
 +  private fun canScroll(direction: Int): Boolean = scrollView()?.canScrollHorizontally(direction) == true
 +
 +  private fun yieldToParent(event: MotionEvent, dispatchToContent: (MotionEvent) -> Boolean) {
-+    drag = Drag.VERTICAL
 +    val cancel = MotionEvent.obtain(event)
 +    try {
 +      cancel.action = MotionEvent.ACTION_CANCEL
++      // Keep the delegate enabled until Android clears its pointer/velocity state.
++      scrollView()?.requestDisallowInterceptTouchEvent(false)
 +      dispatchToContent(cancel)
 +    } finally {
 +      cancel.recycle()
++      drag = Drag.VERTICAL
 +      host.stopNestedScroll()
++      host.parent?.requestDisallowInterceptTouchEvent(false)
++    }
++    if (event.actionMasked == MotionEvent.ACTION_MOVE) {
++      forwardVerticalMove(event)
++    }
++  }
++
++  private fun forwardVerticalMove(event: MotionEvent) {
++    // Ancestors saw DOWN but skipped this MOVE while interception was reserved.
++    // Let the vertical owner's normal touch handler consume its slop-crossing
++    // delta now; waiting for another interception loses short two-MOVE flicks.
++    val move = MotionEvent.obtain(event)
++    var child: View = host
++    try {
++      while (true) {
++        val parent = child.parent as? ViewGroup ?: return
++        if (!child.matrix.isIdentity) move.transform(child.matrix)
++        move.offsetLocation((child.left - parent.scrollX).toFloat(), (child.top - parent.scrollY).toFloat())
++        if ((parent.canScrollVertically(-1) || parent.canScrollVertically(1)) && parent.onTouchEvent(move)) {
++          return
++        }
++        child = parent
++      }
++    } finally {
++      move.recycle()
 +    }
 +  }
 +
@@ -1704,5 +1731,211 @@ new file mode 100644
 +    pointerId = event.getPointerId(index)
 +    downX = event.getX(index)
 +    downY = event.getY(index)
++  }
++}
+diff --git a/android/src/test/java/com/swmansion/enriched/markdown/views/ReviewGestureDispatchProbeTest.java b/android/src/test/java/com/swmansion/enriched/markdown/views/ReviewGestureDispatchProbeTest.java
+new file mode 100644
+--- /dev/null
++++ b/android/src/test/java/com/swmansion/enriched/markdown/views/ReviewGestureDispatchProbeTest.java
+@@ -0,0 +1,201 @@
++package com.swmansion.enriched.markdown.views;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertFalse;
++import static org.junit.Assert.assertTrue;
++
++import android.app.Activity;
++import android.os.SystemClock;
++import android.view.InputDevice;
++import android.view.MotionEvent;
++import android.view.View;
++import android.view.ViewConfiguration;
++import android.view.VelocityTracker;
++import android.widget.FrameLayout;
++import android.widget.HorizontalScrollView;
++import android.widget.LinearLayout;
++import android.widget.ScrollView;
++import java.util.concurrent.atomic.AtomicInteger;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.robolectric.Robolectric;
++import org.robolectric.RobolectricTestRunner;
++import org.robolectric.annotation.Config;
++import org.robolectric.util.ReflectionHelpers;
++
++@RunWith(RobolectricTestRunner.class)
++@Config(sdk = 32, manifest = Config.NONE)
++public class ReviewGestureDispatchProbeTest {
++  @Test
++  public void twoMoveVerticalFlickScrollsPageOverGuardedCode() {
++    assertTrue("unguarded control", verticalFlick(false, false) > 0);
++    int guardedOffset = verticalFlick(true, false);
++    assertTrue("guarded code page offset=" + guardedOffset, guardedOffset > 0);
++  }
++
++  @Test
++  public void twoMoveVerticalFlickScrollsPageOverTable() {
++    assertTrue("unguarded control", verticalFlick(false, false) > 0);
++    int guardedOffset = verticalFlick(false, true);
++    assertTrue("guarded table page offset=" + guardedOffset, guardedOffset > 0);
++  }
++
++  @Test
++  public void verticalHandoffClearsTablePointerLikeARealCancel() {
++    Activity activity = Robolectric.buildActivity(Activity.class).setup().get();
++    HorizontalScrollView block = new OverflowHorizontalScrollView(activity);
++    mount(activity, block, false);
++    long start = SystemClock.uptimeMillis();
++    send(block, start, 0, MotionEvent.ACTION_DOWN, 40);
++    assertEquals(0, ReflectionHelpers.<Integer>getField(block, "mActivePointerId").intValue());
++    send(block, start, 16, MotionEvent.ACTION_CANCEL, 45);
++    assertEquals("control: a real cancel clears the pointer", MotionEvent.INVALID_POINTER_ID,
++        ReflectionHelpers.<Integer>getField(block, "mActivePointerId").intValue());
++    send(block, start + 32, 0, MotionEvent.ACTION_DOWN, 40);
++    assertEquals(0, ReflectionHelpers.<Integer>getField(block, "mActivePointerId").intValue());
++    send(block, start + 32, 16, MotionEvent.ACTION_MOVE, 90);
++    assertEquals("vertical handoff must clear the active Android pointer", MotionEvent.INVALID_POINTER_ID,
++        ReflectionHelpers.<Integer>getField(block, "mActivePointerId").intValue());
++    assertFalse(ReflectionHelpers.<Boolean>getField(block, "mIsBeingDragged"));
++    assertNoPreviousVelocity(block);
++    send(block, start + 64, 0, MotionEvent.ACTION_DOWN, 45);
++    assertEquals("the next gesture must initialize a fresh active pointer", 0,
++        ReflectionHelpers.<Integer>getField(block, "mActivePointerId").intValue());
++    assertFalse(ReflectionHelpers.<Boolean>getField(block, "mIsBeingDragged"));
++    send(block, start + 64, 16, MotionEvent.ACTION_CANCEL, 45);
++    assertEquals(MotionEvent.INVALID_POINTER_ID,
++        ReflectionHelpers.<Integer>getField(block, "mActivePointerId").intValue());
++  }
++
++  @Test
++  public void childInterceptionVetoDoesNotSkipTableCancellation() {
++    Activity activity = Robolectric.buildActivity(Activity.class).setup().get();
++    HorizontalScrollView block = new OverflowHorizontalScrollView(activity);
++    mount(activity, block, false);
++    long start = SystemClock.uptimeMillis();
++    send(block, start, 0, MotionEvent.ACTION_DOWN, 40);
++    // Selectable descendants can veto their scroll parent's interception.
++    block.requestDisallowInterceptTouchEvent(true);
++    send(block, start, 16, MotionEvent.ACTION_MOVE, 90);
++    assertEquals(MotionEvent.INVALID_POINTER_ID,
++        ReflectionHelpers.<Integer>getField(block, "mActivePointerId").intValue());
++    assertNoPreviousVelocity(block);
++  }
++
++  @Test
++  public void slopCrossingMoveReachesParentOnceInItsOwnCoordinates() {
++    for (boolean table : new boolean[] {false, true}) {
++      Activity activity = Robolectric.buildActivity(Activity.class).setup().get();
++      AtomicInteger moves = new AtomicInteger();
++      ScrollView page = new ScrollView(activity) {
++        @Override
++        public boolean onStartNestedScroll(View child, View target, int axes) {
++          return false;
++        }
++
++        @Override
++        public boolean onTouchEvent(MotionEvent event) {
++          if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
++            moves.incrementAndGet();
++            assertEquals(150f, event.getX(), 0.01f);
++            assertEquals(135f, event.getY(), 0.01f);
++          }
++          return super.onTouchEvent(event);
++        }
++      };
++      HorizontalScrollView block = table
++          ? new OverflowHorizontalScrollView(activity) : new HorizontalScrollView(activity);
++      mount(activity, block, !table, page);
++      page.getChildAt(0).setPadding(11, 17, 0, 0);
++      int exact = View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY);
++      page.measure(exact, exact);
++      page.layout(0, 0, 300, 300);
++      page.scrollTo(0, 25);
++      long start = SystemClock.uptimeMillis();
++      send(page, start, 0, MotionEvent.ACTION_DOWN, 175);
++      send(page, start, 16, MotionEvent.ACTION_MOVE, 135);
++      assertEquals("consume the first delta through the parent's native touch handler",
++          25 + 40 - ViewConfiguration.get(activity).getScaledTouchSlop(), page.getScrollY());
++      assertEquals(1, moves.get());
++      assertEquals(0, block.getScrollX());
++      send(page, start, 32, MotionEvent.ACTION_MOVE, 95);
++      send(page, start, 48, MotionEvent.ACTION_UP, 95);
++      assertEquals(MotionEvent.INVALID_POINTER_ID,
++          ReflectionHelpers.<Integer>getField(page, "mActivePointerId").intValue());
++    }
++  }
++
++  private int verticalFlick(boolean guard, boolean table) {
++    Activity activity = Robolectric.buildActivity(Activity.class).setup().get();
++    HorizontalScrollView block = table
++        ? new OverflowHorizontalScrollView(activity) : new HorizontalScrollView(activity);
++    ScrollView page = mount(activity, block, guard);
++    long start = SystemClock.uptimeMillis();
++    send(page, start, 0, MotionEvent.ACTION_DOWN, 175);
++    send(page, start, 16, MotionEvent.ACTION_MOVE, 135);
++    send(page, start, 32, MotionEvent.ACTION_MOVE, 95);
++    send(page, start, 48, MotionEvent.ACTION_UP, 95);
++    return page.getScrollY();
++  }
++
++  private ScrollView mount(Activity activity, HorizontalScrollView block, boolean guard) {
++    ScrollView page = new ScrollView(activity) {
++      @Override
++      public boolean onStartNestedScroll(View child, View target, int axes) {
++        return false;
++      }
++    };
++    return mount(activity, block, guard, page);
++  }
++
++  private ScrollView mount(Activity activity, HorizontalScrollView block, boolean guard, ScrollView page) {
++    LinearLayout body = new LinearLayout(activity);
++    body.setOrientation(LinearLayout.VERTICAL);
++    page.addView(body);
++    activity.setContentView(page);
++    View content = new View(activity);
++    content.setMinimumWidth(900);
++    content.setOnClickListener(view -> {});
++    block.addView(content, new FrameLayout.LayoutParams(900, 200));
++    if (guard) {
++      FrameLayout host = new FrameLayout(activity) {
++        final HorizontalScrollGesture gesture = new HorizontalScrollGesture(this, () -> block);
++        @Override
++        public boolean dispatchTouchEvent(MotionEvent event) {
++          return gesture.dispatch(event, super::dispatchTouchEvent);
++        }
++      };
++      host.setNestedScrollingEnabled(true);
++      host.addView(block, new FrameLayout.LayoutParams(300, 200));
++      body.addView(host, new LinearLayout.LayoutParams(300, 200));
++    } else {
++      body.addView(block, new LinearLayout.LayoutParams(300, 200));
++    }
++    body.addView(new View(activity), new LinearLayout.LayoutParams(300, 1000));
++    int exact = View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY);
++    page.measure(exact, exact);
++    page.layout(0, 0, 300, 300);
++    assertTrue("fixture content must overflow horizontally", block.canScrollHorizontally(1));
++    return page;
++  }
++
++  private void send(View page, long start, int elapsed, int action, float y) {
++    MotionEvent event = MotionEvent.obtain(start, start + elapsed, action, 150, y, 0);
++    event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
++    try {
++      page.dispatchTouchEvent(event);
++      assertEquals("dispatch must leave the caller's event in its original coordinates",
++          y, event.getY(), 0.01f);
++    } finally {
++      event.recycle();
++    }
++  }
++
++  private void assertNoPreviousVelocity(HorizontalScrollView block) {
++    VelocityTracker tracker = ReflectionHelpers.getField(block, "mVelocityTracker");
++    if (tracker != null) {
++      tracker.computeCurrentVelocity(1000);
++      assertEquals(0f, tracker.getYVelocity(), 0.01f);
++    }
 +  }
 +}

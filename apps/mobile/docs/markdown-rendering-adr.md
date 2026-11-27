@@ -248,8 +248,14 @@ For either renderer, the shared arbiter:
   the content can scroll in the initial drag direction. The lock lasts until
   UP/CANCEL, including at an edge, so reversing direction remains smooth.
 - Cancels the pending child press and releases interception for vertical
-  intent or an initial outward drag at an edge. The parent handles subsequent
-  moves normally. Narrow blocks never reserve the stream.
+  intent or an initial outward drag at an edge. The delegate stays enabled
+  through the synthetic CANCEL so Android clears its active pointer and
+  velocity history, including when a selectable child has vetoed interception.
+  The slop-crossing MOVE is delivered once to the nearest scrolling ancestor's
+  native touch handler, in that ancestor's coordinates. This consumes the
+  initial vertical delta before normal interception resumes; merely releasing
+  interception can otherwise swallow an entire two-MOVE flick. Narrow blocks
+  never reserve the stream.
 - Clears a selectable child's interception veto when horizontal intent wins,
   and releases all protection on UP/CANCEL. Stationary taps and long presses
   still reach the child. Native tables/math also notify the React root when
@@ -274,7 +280,7 @@ the arbiter nor its Yoga-managed code host measures or enlarges the viewport.
 After Android prebuild, run the API 32 Robolectric tests from `apps/mobile/android`:
 
 ```bash
-./gradlew :react-native-enriched-markdown:testDebugUnitTest --tests '*OverflowHorizontalScrollViewTest' --tests '*MarkdownWidthTest' --tests '*MarkdownGfmLayoutTest'
+./gradlew :react-native-enriched-markdown:testDebugUnitTest :markdown-scroll-guard:compileDebugKotlin --no-daemon --max-workers=4
 ```
 
 `OverflowHorizontalScrollViewTest` dispatches complete finger event streams
@@ -290,6 +296,14 @@ CodeBlock's guard/ScrollView/selection/copy wiring and the timeline's keyboard
 and selection callbacks; it does not simulate native event dispatch.
 These checks do not establish real-device gesture success rates, Fabric layout,
 HTML WebView behavior, or iOS visual parity.
+
+`ReviewGestureDispatchProbeTest` retains the three reviewer regressions:
+16ms `DOWN → MOVE → MOVE → UP` vertical flicks over the table and code routes,
+and native pointer cleanup on vertical handoff followed by a fresh gesture.
+It also checks cancellation under a child's interception veto, and verifies
+that the first vertical delta reaches a padded, already-scrolled parent once,
+with its event coordinates preserved. These tests accompany the existing
+horizontal protection, edge, selection and width regressions in the full task.
 
 For regression testing, paste this fixture into a Markdown attachment, an issue
 description, a comment, or a chat message. Add enough prose after it for the
