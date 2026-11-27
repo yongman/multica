@@ -252,10 +252,17 @@ For either renderer, the shared arbiter:
   through the synthetic CANCEL so Android clears its active pointer and
   velocity history, including when a selectable child has vetoed interception.
   The slop-crossing MOVE is delivered once to the nearest scrolling ancestor's
-  native touch handler, in that ancestor's coordinates. This consumes the
-  initial vertical delta before normal interception resumes; merely releasing
-  interception can otherwise swallow an entire two-MOVE flick. Narrow blocks
-  never reserve the stream.
+  native touch handler, in that ancestor's coordinates. The same MOVE then
+  goes through that ancestor's `dispatchTouchEvent`: the now-active native drag
+  intercepts and cancels its child touch target, without consuming the delta
+  twice. This establishes framework ownership before the frame returns, so
+  later MOVE displacement and terminal UP/CANCEL reach the owner normally.
+  React Native's interception path also emits its real drag-begin callback.
+  The outer child dispatch consumes its in-flight MOVE even when the ownership
+  CANCEL resets the arbiter, and restores the owner's veto against outer
+  ancestors after child cancellation. Releasing interception alone can swallow
+  two-MOVE flicks; forwarding only to `onTouchEvent` leaves the child owning
+  the stream. Narrow blocks never reserve the stream.
 - Clears a selectable child's interception veto when horizontal intent wins,
   and releases all protection on UP/CANCEL. Stationary taps and long presses
   still reach the child. Native tables/math also notify the React root when
@@ -304,6 +311,17 @@ It also checks cancellation under a child's interception veto, and verifies
 that the first vertical delta reaches a padded, already-scrolled parent once,
 with its event coordinates preserved. These tests accompany the existing
 horizontal protection, edge, selection and width regressions in the full task.
+
+`ReviewVerticalOwnershipProbeTest` preserves both subsequent displacement and
+terminal delivery regressions for tables and guarded code. It also verifies
+that Android clears the parent's child touch target on the slop-crossing frame,
+and that an outer interceptor cannot steal the transferred stream.
+`ReactVerticalDragTest` uses the actual RN `ReactScrollView` and its scroll-event
+listener to assert one BEGIN_DRAG and END_DRAG for one-MOVE flicks, for both
+renderers and accepting/refusing nested parents. It uses local RN feature flags
+and a detached JS event sink; the content is measured explicitly as Yoga would
+normally do. This exercises RN's native interception and event-emission code,
+without claiming Fabric rendering or JS selection/keyboard integration.
 
 For regression testing, paste this fixture into a Markdown attachment, an issue
 description, a comment, or a chat message. Add enough prose after it for the

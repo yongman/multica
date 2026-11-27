@@ -1594,7 +1594,7 @@ diff --git a/android/src/main/java/com/swmansion/enriched/markdown/views/Horizon
 new file mode 100644
 --- /dev/null
 +++ b/android/src/main/java/com/swmansion/enriched/markdown/views/HorizontalScrollGesture.kt
-@@ -0,0 +1,138 @@
+@@ -0,0 +1,149 @@
 +package com.swmansion.enriched.markdown.views
 +
 +import android.view.MotionEvent
@@ -1624,6 +1624,7 @@ new file mode 100644
 +    get() = drag == Drag.PENDING || drag == Drag.HORIZONTAL
 +
 +  fun dispatch(event: MotionEvent, dispatchToContent: (MotionEvent) -> Boolean): Boolean {
++    var yielded = false
 +    when (event.actionMasked) {
 +      MotionEvent.ACTION_DOWN -> {
 +        drag = if (canScroll(-1) || canScroll(1)) Drag.PENDING else Drag.NONE
@@ -1662,6 +1663,7 @@ new file mode 100644
 +              scrollView()?.requestDisallowInterceptTouchEvent(false)
 +            } else {
 +              yieldToParent(event, dispatchToContent)
++              yielded = true
 +            }
 +            host.stopNestedScroll()
 +          }
@@ -1670,9 +1672,11 @@ new file mode 100644
 +    }
 +
 +    val terminal = event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL
-+    host.parent?.requestDisallowInterceptTouchEvent(canHandleTouch)
++    if (!yielded) host.parent?.requestDisallowInterceptTouchEvent(canHandleTouch)
 +    try {
-+      return drag == Drag.VERTICAL || dispatchToContent(event)
++      // Transferring ownership dispatches a real CANCEL back through this host.
++      // Even if it resets our state, the outer MOVE must not reach content again.
++      return yielded || drag == Drag.VERTICAL || dispatchToContent(event)
 +    } finally {
 +      if (terminal) {
 +        host.stopNestedScroll()
@@ -1702,14 +1706,17 @@ new file mode 100644
 +      host.parent?.requestDisallowInterceptTouchEvent(false)
 +    }
 +    if (event.actionMasked == MotionEvent.ACTION_MOVE) {
-+      forwardVerticalMove(event)
++      transferVerticalGesture(event)
 +    }
 +  }
 +
-+  private fun forwardVerticalMove(event: MotionEvent) {
++  private fun transferVerticalGesture(event: MotionEvent) {
 +    // Ancestors saw DOWN but skipped this MOVE while interception was reserved.
-+    // Let the vertical owner's normal touch handler consume its slop-crossing
-+    // delta now; waiting for another interception loses short two-MOVE flicks.
++    // Consume the slop-crossing delta before interception updates the parent's
++    // motion baseline. Then dispatch the same frame through that parent: its
++    // now-active drag intercepts, emits RN's drag-begin, and cancels its child
++    // touch target. Subsequent MOVE/UP/CANCEL go to the owner through Android's
++    // dispatcher, without another interception frame swallowing displacement.
 +    val move = MotionEvent.obtain(event)
 +    var child: View = host
 +    try {
@@ -1718,6 +1725,10 @@ new file mode 100644
 +        if (!child.matrix.isIdentity) move.transform(child.matrix)
 +        move.offsetLocation((child.left - parent.scrollX).toFloat(), (child.top - parent.scrollY).toFloat())
 +        if ((parent.canScrollVertically(-1) || parent.canScrollVertically(1)) && parent.onTouchEvent(move)) {
++          parent.dispatchTouchEvent(move)
++          // Child cancellation releases its old veto up the entire chain.
++          // Restore the scrolling owner's protection against outer ancestors.
++          parent.parent?.requestDisallowInterceptTouchEvent(true)
 +          return
 +        }
 +        child = parent
@@ -1737,7 +1748,7 @@ diff --git a/android/src/test/java/com/swmansion/enriched/markdown/views/ReviewG
 new file mode 100644
 --- /dev/null
 +++ b/android/src/test/java/com/swmansion/enriched/markdown/views/ReviewGestureDispatchProbeTest.java
-@@ -0,0 +1,201 @@
+@@ -0,0 +1,203 @@
 +package com.swmansion.enriched.markdown.views;
 +
 +import static org.junit.Assert.assertEquals;
@@ -1836,9 +1847,9 @@ new file mode 100644
 +        @Override
 +        public boolean onTouchEvent(MotionEvent event) {
 +          if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
-+            moves.incrementAndGet();
++            int move = moves.incrementAndGet();
 +            assertEquals(150f, event.getX(), 0.01f);
-+            assertEquals(135f, event.getY(), 0.01f);
++            assertEquals(move == 1 ? 135f : 95f, event.getY(), 0.01f);
 +          }
 +          return super.onTouchEvent(event);
 +        }
@@ -1859,6 +1870,8 @@ new file mode 100644
 +      assertEquals(1, moves.get());
 +      assertEquals(0, block.getScrollX());
 +      send(page, start, 32, MotionEvent.ACTION_MOVE, 95);
++      assertEquals("the owner's next native MOVE must retain its coordinates", 2, moves.get());
++      assertEquals(25 + 80 - ViewConfiguration.get(activity).getScaledTouchSlop(), page.getScrollY());
 +      send(page, start, 48, MotionEvent.ACTION_UP, 95);
 +      assertEquals(MotionEvent.INVALID_POINTER_ID,
 +          ReflectionHelpers.<Integer>getField(page, "mActivePointerId").intValue());
@@ -1936,6 +1949,384 @@ new file mode 100644
 +    if (tracker != null) {
 +      tracker.computeCurrentVelocity(1000);
 +      assertEquals(0f, tracker.getYVelocity(), 0.01f);
++    }
++  }
++}
+diff --git a/android/src/test/java/com/swmansion/enriched/markdown/views/ReviewVerticalOwnershipProbeTest.java b/android/src/test/java/com/swmansion/enriched/markdown/views/ReviewVerticalOwnershipProbeTest.java
+new file mode 100644
+--- /dev/null
++++ b/android/src/test/java/com/swmansion/enriched/markdown/views/ReviewVerticalOwnershipProbeTest.java
+@@ -0,0 +1,186 @@
++package com.swmansion.enriched.markdown.views;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertNull;
++import static org.junit.Assert.assertTrue;
++
++import android.app.Activity;
++import android.os.SystemClock;
++import android.view.InputDevice;
++import android.view.MotionEvent;
++import android.view.View;
++import android.widget.FrameLayout;
++import android.widget.HorizontalScrollView;
++import android.widget.LinearLayout;
++import android.widget.ScrollView;
++import java.util.Arrays;
++import java.util.List;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.robolectric.ParameterizedRobolectricTestRunner;
++import org.robolectric.ParameterizedRobolectricTestRunner.Parameters;
++import org.robolectric.Robolectric;
++import org.robolectric.RuntimeEnvironment;
++import org.robolectric.annotation.Config;
++import org.robolectric.util.ReflectionHelpers;
++
++@RunWith(ParameterizedRobolectricTestRunner.class)
++@Config(sdk = 32, manifest = Config.NONE)
++public class ReviewVerticalOwnershipProbeTest {
++  @Parameters(name = "table={0}")
++  public static List<Object[]> renderers() {
++    return Arrays.asList(new Object[][] {{false}, {true}});
++  }
++
++  private final boolean table;
++
++  public ReviewVerticalOwnershipProbeTest(boolean table) {
++    this.table = table;
++  }
++
++  @Test
++  public void secondMoveContinuesScrollingAfterHandoff() {
++    RecordingPage page = page(table);
++    long started = SystemClock.uptimeMillis();
++    send(page, started, 0, MotionEvent.ACTION_DOWN, 175);
++    send(page, started, 16, MotionEvent.ACTION_MOVE, 135);
++    int firstOffset = page.getScrollY();
++    assertTrue("first MOVE was forwarded and scrolled", firstOffset > 0);
++    send(page, started, 32, MotionEvent.ACTION_MOVE, 95);
++    assertEquals("the next MOVE should contribute its own displacement: table=" + table,
++        firstOffset + 40, page.getScrollY());
++    send(page, started, 48, MotionEvent.ACTION_CANCEL, 95);
++  }
++
++  @Test
++  public void forwardedMoveIsFollowedByTheParentsTerminalTouch() {
++    for (int terminal : new int[] {MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL}) {
++      RecordingPage page = page(table);
++      long started = SystemClock.uptimeMillis();
++      send(page, started, 0, MotionEvent.ACTION_DOWN, 175);
++      send(page, started, 16, MotionEvent.ACTION_MOVE, 95);
++      send(page, started, 32, terminal, 95);
++      assertTrue("the page scrolled on the forwarded MOVE", page.getScrollY() > 0);
++      assertEquals("parent that consumed the drag must receive terminal onTouchEvent",
++          1, page.terminalTouches);
++      assertEquals(MotionEvent.INVALID_POINTER_ID,
++          ReflectionHelpers.<Integer>getField(page, "mActivePointerId").intValue());
++    }
++  }
++
++  @Test
++  public void slopCrossingMoveTransfersFrameworkTouchOwnershipImmediately() {
++    RecordingPage page = page(table);
++    long started = SystemClock.uptimeMillis();
++    send(page, started, 0, MotionEvent.ACTION_DOWN, 175);
++    assertTrue(ReflectionHelpers.getField(page, "mFirstTouchTarget") != null);
++    send(page, started, 16, MotionEvent.ACTION_MOVE, 135);
++    assertNull("the scrolling parent must own the stream before dispatch returns",
++        ReflectionHelpers.getField(page, "mFirstTouchTarget"));
++    assertEquals("the parent's interception/drag-begin path must run", 1, page.dragBegins);
++    send(page, started, 32, MotionEvent.ACTION_MOVE, 95);
++    send(page, started, 48, MotionEvent.ACTION_UP, 95);
++    assertEquals(1, page.dragBegins);
++    assertEquals(1, page.terminalTouches);
++  }
++
++  @Test
++  public void transferredOwnerRemainsProtectedFromOuterInterception() {
++    RecordingPage page = page(table);
++    View root = (View) page.getParent();
++    long started = SystemClock.uptimeMillis();
++    send(root, started, 0, MotionEvent.ACTION_DOWN, 175);
++    send(root, started, 16, MotionEvent.ACTION_MOVE, 135);
++    int firstOffset = page.getScrollY();
++    send(root, started, 32, MotionEvent.ACTION_MOVE, 95);
++    assertEquals(firstOffset + 40, page.getScrollY());
++    send(root, started, 48, MotionEvent.ACTION_CANCEL, 95);
++    assertEquals(1, page.terminalTouches);
++  }
++
++  private RecordingPage page(boolean table) {
++    Activity activity = Robolectric.buildActivity(Activity.class).setup().get();
++    RecordingPage page = new RecordingPage();
++    LinearLayout body = new LinearLayout(activity);
++    body.setOrientation(LinearLayout.VERTICAL);
++    page.addView(body);
++    FrameLayout root = new FrameLayout(activity) {
++      @Override
++      public boolean onInterceptTouchEvent(MotionEvent event) {
++        return event.getActionMasked() == MotionEvent.ACTION_MOVE;
++      }
++    };
++    root.addView(page, new FrameLayout.LayoutParams(300, 300));
++    activity.setContentView(root);
++    HorizontalScrollView block = table
++        ? new OverflowHorizontalScrollView(activity) : new HorizontalScrollView(activity);
++    View cell = new View(activity);
++    cell.setMinimumWidth(900);
++    cell.setClickable(true);
++    block.addView(cell, new FrameLayout.LayoutParams(900, 200));
++    if (table) {
++      body.addView(block, new LinearLayout.LayoutParams(300, 200));
++    } else {
++      FrameLayout host = new FrameLayout(activity) {
++        final HorizontalScrollGesture gesture = new HorizontalScrollGesture(this, () -> block);
++        { setNestedScrollingEnabled(true); }
++        @Override
++        public boolean dispatchTouchEvent(MotionEvent event) {
++          return gesture.dispatch(event, super::dispatchTouchEvent);
++        }
++      };
++      host.addView(block, new FrameLayout.LayoutParams(300, 200));
++      body.addView(host, new LinearLayout.LayoutParams(300, 200));
++    }
++    body.addView(new View(activity), new LinearLayout.LayoutParams(300, 1000));
++    int size = View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY);
++    root.measure(size, size);
++    root.layout(0, 0, 300, 300);
++    assertTrue("content must overflow", block.canScrollHorizontally(1));
++    return page;
++  }
++
++  private void send(View page, long started, int elapsed, int action, float position) {
++    MotionEvent event = MotionEvent.obtain(started, started + elapsed, action, 150, position, 0);
++    event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
++    try {
++      page.dispatchTouchEvent(event);
++      assertEquals("dispatch must preserve the caller's coordinates", position, event.getY(), 0.01f);
++      assertEquals(action, event.getAction());
++    } finally {
++      event.recycle();
++    }
++  }
++
++  private static final class RecordingPage extends ScrollView {
++    int terminalTouches;
++    int dragBegins;
++
++    RecordingPage() {
++      super(RuntimeEnvironment.getApplication());
++    }
++
++    @Override
++    public boolean onStartNestedScroll(View child, View target, int axes) {
++      return false;
++    }
++
++    @Override
++    public boolean onInterceptTouchEvent(MotionEvent event) {
++      boolean intercept = super.onInterceptTouchEvent(event);
++      if (intercept && event.getActionMasked() == MotionEvent.ACTION_MOVE) {
++        dragBegins++;
++      }
++      return intercept;
++    }
++
++    @Override
++    public boolean onTouchEvent(MotionEvent event) {
++      if (event.getActionMasked() == MotionEvent.ACTION_UP
++          || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
++        terminalTouches++;
++      }
++      return super.onTouchEvent(event);
++    }
++  }
++}
+diff --git a/android/src/test/java/com/swmansion/enriched/markdown/views/ReactVerticalDragTest.java b/android/src/test/java/com/swmansion/enriched/markdown/views/ReactVerticalDragTest.java
+new file mode 100644
+--- /dev/null
++++ b/android/src/test/java/com/swmansion/enriched/markdown/views/ReactVerticalDragTest.java
+@@ -0,0 +1,182 @@
++package com.swmansion.enriched.markdown.views;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertNull;
++import static org.junit.Assert.assertTrue;
++
++import android.app.Activity;
++import android.content.Context;
++import android.os.SystemClock;
++import android.view.InputDevice;
++import android.view.MotionEvent;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.FrameLayout;
++import android.widget.HorizontalScrollView;
++import android.widget.LinearLayout;
++import com.facebook.react.bridge.BridgeReactContext;
++import com.facebook.react.internal.featureflags.ReactNativeFeatureFlagsForTests;
++import com.facebook.react.uimanager.RootView;
++import com.facebook.react.uimanager.events.BlackHoleEventDispatcher;
++import com.facebook.react.uimanager.events.EventDispatcher;
++import com.facebook.react.uimanager.events.EventDispatcherProvider;
++import com.facebook.react.views.scroll.ReactScrollView;
++import com.facebook.react.views.scroll.ReactScrollViewHelper;
++import com.facebook.react.views.scroll.ScrollEventType;
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.List;
++import org.junit.Before;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.robolectric.ParameterizedRobolectricTestRunner;
++import org.robolectric.ParameterizedRobolectricTestRunner.Parameters;
++import org.robolectric.Robolectric;
++import org.robolectric.annotation.Config;
++import org.robolectric.util.ReflectionHelpers;
++
++@RunWith(ParameterizedRobolectricTestRunner.class)
++@Config(sdk = 32, manifest = Config.NONE)
++public class ReactVerticalDragTest {
++  @Parameters(name = "table={0},nested={1}")
++  public static List<Object[]> configurations() {
++    return Arrays.asList(new Object[][] {{false, false}, {false, true}, {true, false}, {true, true}});
++  }
++
++  private final boolean table;
++  private final boolean nested;
++
++  public ReactVerticalDragTest(boolean table, boolean nested) {
++    this.table = table;
++    this.nested = nested;
++  }
++
++  @Before
++  public void useLocalFeatureFlags() {
++    ReactNativeFeatureFlagsForTests.INSTANCE.setUp();
++  }
++
++  @Test
++  public void oneMoveFlickEmitsReactDragBeginAndEndForTableAndCode() {
++    Activity activity = Robolectric.buildActivity(Activity.class).setup().get();
++    Context context = new TestReactContext(activity);
++    ReactScrollView page = new ReactScrollView(context) {
++      @Override
++      public boolean onStartNestedScroll(View child, View target, int axes) {
++        return nested && super.onStartNestedScroll(child, target, axes);
++      }
++    };
++    LinearLayout body = new LinearLayout(context);
++    body.setOrientation(LinearLayout.VERTICAL);
++    page.addView(body);
++    ReactRootFixture root = new ReactRootFixture(context);
++    root.addView(page, new FrameLayout.LayoutParams(300, 300));
++    activity.setContentView(root);
++    HorizontalScrollView block = table
++        ? new OverflowHorizontalScrollView(context) : new HorizontalScrollView(context);
++    View cell = new View(context);
++    cell.setMinimumWidth(900);
++    cell.setClickable(true);
++    block.addView(cell, new FrameLayout.LayoutParams(900, 200));
++    if (table) {
++      body.addView(block, new LinearLayout.LayoutParams(300, 200));
++    } else {
++      FrameLayout host = new FrameLayout(context) {
++        final HorizontalScrollGesture gesture = new HorizontalScrollGesture(this, () -> block);
++        { setNestedScrollingEnabled(true); }
++        @Override
++        public boolean dispatchTouchEvent(MotionEvent event) {
++          return gesture.dispatch(event, super::dispatchTouchEvent);
++        }
++      };
++      host.addView(block, new FrameLayout.LayoutParams(300, 200));
++      body.addView(host, new LinearLayout.LayoutParams(300, 200));
++    }
++    body.addView(new View(context), new LinearLayout.LayoutParams(300, 1000));
++    int exact = View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY);
++    page.measure(exact, exact);
++    page.layout(0, 0, 300, 300);
++    // RN expects Yoga to measure/layout its content instead of ScrollView.
++    body.measure(exact, View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
++    body.layout(0, 0, 300, body.getMeasuredHeight());
++    assertTrue("the mounted code/table viewport must overflow", block.canScrollHorizontally(1));
++    List<ScrollEventType> events = new ArrayList<>();
++    ReactScrollViewHelper.ScrollListener listener = new ReactScrollViewHelper.ScrollListener() {
++      @Override
++      public void onScroll(ViewGroup owner, ScrollEventType type, float vx, float vy) {
++        if (owner == page) events.add(type);
++      }
++      @Override
++      public void onLayout(ViewGroup owner) {}
++    };
++    ReactScrollViewHelper.addScrollListener(listener);
++    try {
++      long started = SystemClock.uptimeMillis();
++      send(page, started, 0, MotionEvent.ACTION_DOWN, 175);
++      send(page, started, 16, MotionEvent.ACTION_MOVE, 95);
++      assertTrue("the slop-crossing MOVE must scroll", page.getScrollY() > 0);
++      assertEquals("real ReactScrollView interception must emit one BEGIN_DRAG", 1,
++          events.stream().filter(type -> type == ScrollEventType.BEGIN_DRAG).count());
++      assertNull(ReflectionHelpers.getField(page, "mFirstTouchTarget"));
++      send(page, started, 32, MotionEvent.ACTION_UP, 95);
++      assertEquals("the native terminal must emit END_DRAG", 1,
++          events.stream().filter(type -> type == ScrollEventType.END_DRAG).count());
++      assertTrue(events.indexOf(ScrollEventType.BEGIN_DRAG) < events.indexOf(ScrollEventType.END_DRAG));
++      assertEquals(1, root.nativeStarts);
++      assertEquals(1, root.nativeEnds);
++    } finally {
++      ReactScrollViewHelper.removeScrollListener(listener);
++    }
++  }
++
++  private void send(View page, long started, int elapsed, int action, float y) {
++    MotionEvent event = MotionEvent.obtain(started, started + elapsed, action, 150, y, 0);
++    event.setSource(InputDevice.SOURCE_TOUCHSCREEN);
++    try {
++      page.dispatchTouchEvent(event);
++    } finally {
++      event.recycle();
++    }
++  }
++
++  private static final class ReactRootFixture extends FrameLayout implements RootView {
++    int nativeStarts;
++    int nativeEnds;
++
++    ReactRootFixture(Context context) {
++      super(context);
++    }
++
++    @Override
++    public void onChildStartedNativeGesture(View child, MotionEvent event) {
++      nativeStarts++;
++    }
++
++    @Override
++    public void onChildStartedNativeGesture(MotionEvent event) {
++      nativeStarts++;
++    }
++
++    @Override
++    public void onChildEndedNativeGesture(View child, MotionEvent event) {
++      nativeEnds++;
++    }
++
++    @Override
++    public void handleException(Throwable error) {
++      throw new AssertionError(error);
++    }
++  }
++
++  // Real RN view/event methods run with a detached JS event sink. No Fabric
++  // runtime or JavaScript renderer is simulated by this JVM regression.
++  private static final class TestReactContext extends BridgeReactContext implements EventDispatcherProvider {
++    TestReactContext(Context context) {
++      super(context);
++    }
++    @Override
++    public EventDispatcher getEventDispatcher() {
++      return BlackHoleEventDispatcher.INSTANCE;
 +    }
 +  }
 +}
