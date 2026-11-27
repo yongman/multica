@@ -251,16 +251,21 @@ For either renderer, the shared arbiter:
   intent or an initial outward drag at an edge. The delegate stays enabled
   through the synthetic CANCEL so Android clears its active pointer and
   velocity history, including when a selectable child has vetoed interception.
-  The slop-crossing MOVE is delivered once to the nearest scrolling ancestor's
-  native touch handler, in that ancestor's coordinates. The same MOVE then
-  goes through that ancestor's `dispatchTouchEvent`: the now-active native drag
-  intercepts and cancels its child touch target, without consuming the delta
-  twice. This establishes framework ownership before the frame returns, so
+  Outward drags whose vertical displacement has not exceeded slop use ordinary
+  release; they do not prime a vertical owner's touch handler.
+  Once vertical displacement exceeds slop, the MOVE is delivered once to the
+  nearest scrolling ancestor's native touch handler, in that ancestor's
+  coordinates. The same MOVE then goes through its `dispatchTouchEvent`.
+  If that path intercepts, it cancels the child touch target without consuming
+  the delta twice. This establishes framework ownership before the frame returns, so
   later MOVE displacement and terminal UP/CANCEL reach the owner normally.
   React Native's interception path also emits its real drag-begin callback.
   The outer child dispatch consumes its in-flight MOVE even when the ownership
-  CANCEL resets the arbiter, and restores the owner's veto against outer
-  ancestors after child cancellation. Releasing interception alone can swallow
+  CANCEL resets the arbiter. It restores the owner's veto against outer
+  ancestors only when redispatch actually cancels the guard's own stream,
+  clearing its VERTICAL state to NONE. A true `onTouchEvent` result alone does
+  not establish ownership; an unclaimed transfer leaves outer interception
+  available. Releasing interception alone can swallow
   two-MOVE flicks; forwarding only to `onTouchEvent` leaves the child owning
   the stream. Narrow blocks never reserve the stream.
 - Clears a selectable child's interception veto when horizontal intent wins,
@@ -322,6 +327,13 @@ renderers and accepting/refusing nested parents. It uses local RN feature flags
 and a detached JS event sink; the content is measured explicitly as Yoga would
 normally do. This exercises RN's native interception and event-emission code,
 without claiming Fabric rendering or JS selection/keyboard integration.
+
+`ReviewOutwardHandoffProbeTest` places both table and guarded code inside two
+vertical ScrollViews. It covers outward drags at both horizontal edges with
+zero, below-slop, and exactly-at-slop vertical movement, followed by an outer
+vertical takeover. It separately checks that a candidate handling a MOVE
+without intercepting cannot reserve the outer stream, and that a genuinely
+claimed inner vertical drag keeps its protection and terminal delivery.
 
 For regression testing, paste this fixture into a Markdown attachment, an issue
 description, a comment, or a chat message. Add enough prose after it for the
