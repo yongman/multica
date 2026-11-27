@@ -73,7 +73,7 @@ export default function TabsLayout() {
           tabBarActiveTintColor: theme.foreground,
           tabBarInactiveTintColor: theme.mutedForeground,
           tabBarStyle: { backgroundColor: theme.background },
-          tabBarLabelStyle: { fontSize: 11 },
+          tabBarLabelStyle: { fontSize: 11, marginHorizontal: -3 },
           tabBarHideOnKeyboard: Platform.OS === "android",
         }}
       >
@@ -131,6 +131,20 @@ export default function TabsLayout() {
               <PlatformIcon
                 ios={focused ? "bubble.left.fill" : "bubble.left"}
                 android={focused ? "chatbubble" : "chatbubble-outline"}
+                size={size}
+                color={color}
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="pins"
+          options={{
+            title: t("routes.pinned"),
+            tabBarIcon: ({ color, size, focused }) => (
+              <PlatformIcon
+                ios={focused ? "pin.fill" : "pin"}
+                android={focused ? "pin" : "pin-outline"}
                 size={size}
                 color={color}
               />

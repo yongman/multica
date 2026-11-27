@@ -7,9 +7,10 @@ signing, production/staging/private endpoints and standalone APK verification.
 `pnpm -C apps/mobile android:release` builds a signed production APK using your
 external keystore. The iPhone instructions below require macOS/Xcode.
 
-The bottom bar opens Inbox, Issues, Projects, Chat and More directly.
+The bottom bar opens Inbox, Issues, Projects, Chat, Pinned and More in that order.
+Pinned opens the pinned issues and projects list with the tab bar still visible.
 My Issues is hidden from the bar. More contains account settings, the workspace
-switcher and pinned items.
+switcher and another entry to the same pinned items.
 
 Issue lists load every server page. The workspace Issues tab orders status
 sections as Plan/Backlog, Todo, In Progress, In Review, Blocked and Done.

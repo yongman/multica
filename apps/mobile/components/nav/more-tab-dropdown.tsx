@@ -3,10 +3,10 @@
  * tapped. Mounted as a sibling to the Tabs view, NOT as the tab button
  * itself: that way the real More tab button stays a standard React
  * Navigation `PlatformPressable` (icon + "More" label, full visual
- * parity with Inbox / Issues / Projects / Chat).
+ * parity with Inbox / Issues / Projects / Chat / Pinned).
  *
  * The wrapper View is absolute-positioned over the More tab's screen
- * rect (right 20%, bottom = safe-area, height = tab bar). It uses
+ * rect (rightmost sixth, bottom = safe-area, height = tab bar). It uses
  * `pointerEvents="box-none"` so taps pass through to the real tab
  * button underneath; we open the dropdown imperatively from the tab's
  * `listeners.tabPress` via the exposed `TriggerRef.open()`. The
@@ -106,7 +106,7 @@ export function MoreTabDropdownAnchor({
         position: "absolute",
         right: 0,
         bottom: insets.bottom,
-        width: "20%",
+        width: `${100 / 6}%`,
         height: TAB_BAR_HEIGHT,
       }}
     >
