@@ -4,6 +4,7 @@ import type { Issue, TimelineEntry } from "@multica/core/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TimelineList } from "./timeline-list";
 
+const clearSelection = vi.hoisted(() => vi.fn());
 // Mobile has no React renderer, so a minimal hook runner drives the real
 // component: state, refs, memos and effects with dependency checks, and
 // re-renders until state settles.
@@ -113,7 +114,10 @@ vi.mock("@/lib/use-color-scheme", () => ({ useColorScheme: () => ({ colorScheme:
 vi.mock("@/lib/theme", () => ({ THEME: { light: {} } }));
 vi.mock("@/lib/i18n", () => ({ useT: () => ({ t: (key: string) => key }) }));
 vi.mock("@/data/comment-select-store", () => ({
-  useCommentSelectStore: (select: (state: unknown) => unknown) => select({ selectingId: null }),
+  useCommentSelectStore: Object.assign(
+    (select: (state: unknown) => unknown) => select({ selectingId: null }),
+    { getState: () => ({ clear: clearSelection }) },
+  ),
 }));
 
 type Element = ReactElement<{ children?: unknown; data?: unknown[]; renderItem?: (info: { item: unknown }) => Element; highlightedCommentId?: string | null }>;
@@ -176,5 +180,27 @@ describe("TimelineList deep-link highlight", () => {
     expect(open([root, notice]).highlight).toBeNull();
     expect(open([root, { ...notice }]).highlight).toBeNull();
     expect(open([root, notice], "tap-2").highlight).toBe("failure-notice");
+  });
+
+  it("keeps link/copy taps available while the keyboard is open and clears selection on page scroll", () => {
+    const tree = runner.render(TimelineList, {
+      issue: { id: "issue-1", description: "" } as Issue,
+      entries: [root],
+      timelineLoading: false,
+      refreshing: false,
+      onRefresh: () => {},
+    });
+    const list = findList(tree)! as ReactElement<{
+      keyboardShouldPersistTaps: string;
+      keyboardDismissMode: string;
+      onScrollBeginDrag: () => void;
+      onMomentumScrollBegin: () => void;
+    }>;
+    expect(list.props.keyboardShouldPersistTaps).toBe("handled");
+    expect(list.props.keyboardDismissMode).toBe("on-drag");
+    clearSelection.mockClear();
+    list.props.onScrollBeginDrag();
+    list.props.onMomentumScrollBegin();
+    expect(clearSelection).toHaveBeenCalledTimes(2);
   });
 });

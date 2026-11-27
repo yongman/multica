@@ -39,6 +39,7 @@ import { Text } from "@/components/ui/text";
 import { THEME } from "@/lib/theme";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { useT } from "@/lib/i18n";
+import { ScrollGestureGuard } from "./scroll-gesture-guard";
 import {
   CODE_BLOCK_CONTAINER_CLASS,
   CODE_BLOCK_LANG_LABEL_CLASS,
@@ -102,17 +103,20 @@ export function CodeBlock({ code, lang, selectable = true }: Props) {
       {/* RN's horizontal ScrollView defaults to flexGrow: 1. In a recycled,
           self-sized chat bubble that lets the child outgrow the FlashList
           cell instead of sizing to its code. */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ flexGrow: 0, minWidth: 0, maxWidth: "100%" }}
-      >
-        {lines ? (
-          <HighlightedCode lines={lines} selectable={selectable} />
-        ) : (
-          <PlainCode code={code} selectable={selectable} />
-        )}
-      </ScrollView>
+      <ScrollGestureGuard>
+        <ScrollView
+          horizontal
+          nestedScrollEnabled
+          showsHorizontalScrollIndicator={false}
+          style={{ flexGrow: 0, minWidth: 0, maxWidth: "100%" }}
+        >
+          {lines ? (
+            <HighlightedCode lines={lines} selectable={selectable} />
+          ) : (
+            <PlainCode code={code} selectable={selectable} />
+          )}
+        </ScrollView>
+      </ScrollGestureGuard>
     </View>
   );
 }

@@ -188,7 +188,7 @@ The rendering routes remain:
 | Paragraphs, URLs/paths, inline code, mentions, mixed emphasis, headings | Native text wraps inside the prose viewport; source and link targets are unchanged |
 | Quotes, lists, task lists, code nested inside lists/quotes | Native leading margins reduce the space available to text; nested code keeps its existing wrapping fallback |
 | Top-level fenced or indented code | Full source inside a bounded React horizontal ScrollView |
-| Wide/narrow GFM tables and display math | Existing native `OverflowHorizontalScrollView`; drag arbitration is unchanged |
+| Wide/narrow GFM tables and display math | Bounded native `OverflowHorizontalScrollView` with early Android touch arbitration |
 | Android inline math | Fitting bitmaps stay inline; oversized bitmaps become complete wrapping LaTeX source |
 | Top-level Markdown/HTML images | `expo-image` at body-relative width, with aspect ratio and lightbox preserved |
 | Embedded HTML | Preprocessing strips layout tags/attributes and retains text/images; comment bodies do not host WebViews |
@@ -220,16 +220,76 @@ selection, rotation, large fonts, images, and nested gestures.
 
 **Android horizontal overflow inside a vertical list.** Native Markdown tables
 and display math use the patched `OverflowHorizontalScrollView` from
-`react-native-enriched-markdown`. Overflowing blocks use Android nested
-scrolling while determining the drag direction so the parent list still sees
-pointer changes. A vertical drag cancels the active press before control
-returns to the parent list.
+`react-native-enriched-markdown`. Code blocks keep React Native's horizontal
+`ScrollView`, selectable text, Shiki spans, and copy header. On Android only,
+an app-local Expo `MarkdownScrollGuard` view surrounds that ScrollView and
+uses the same patched `HorizontalScrollGesture` as native tables/math.
+Expo autolinks `modules/markdown-scroll-guard`; its Android Gradle dependency
+on enriched-markdown makes the shared arbiter available without duplicating
+the gesture algorithm. The iOS guard returns its children unchanged.
+
+Android dispatches a parent's interception check before a child's MOVE.
+Waiting until a horizontal MOVE to call `requestDisallowInterceptTouchEvent`
+therefore loses diagonal drags to vertical ancestors. The earlier native
+table fix started a vertical nested scroll on DOWN; that happens to suppress
+interception in an ordinary Android `ScrollView` which accepts nested scrolls.
+It does not protect against an ancestor that arbitrates independently or
+declines nested scrolling. Code blocks previously used an unguarded RN
+ScrollView and had no provisional protection at all. `nestedScrollEnabled`
+alone does not fix this dispatch ordering.
+
+For either renderer, the shared arbiter:
+
+- Reserves the stream on DOWN **only when content overflows**, before the
+  ancestor can consume the first diagonal MOVE, retaining nested-scroll
+  participation during this short phase.
+- Uses the system touch slop and horizontal dominance (`abs(dx) > abs(dy)`),
+  with no extra angle or distance threshold. It locks horizontally only when
+  the content can scroll in the initial drag direction. The lock lasts until
+  UP/CANCEL, including at an edge, so reversing direction remains smooth.
+- Cancels the pending child press and releases interception for vertical
+  intent or an initial outward drag at an edge. The parent handles subsequent
+  moves normally. Narrow blocks never reserve the stream.
+- Clears a selectable child's interception veto when horizontal intent wins,
+  and releases all protection on UP/CANCEL. Stationary taps and long presses
+  still reach the child. Native tables/math also notify the React root when
+  scrolling starts/ends so an enclosing JS Pressable cannot fire its comment
+  action long press while the block is being dragged.
+
+An undecided gesture with a second pointer yields to the page before the
+original pointer can lift. Interception protection otherwise hides pointer
+changes from the parent and can leave it tracking a pointer that no longer
+exists. An already locked horizontal drag keeps its lock.
+
+This applies through the shared Markdown renderer to issue descriptions,
+root/descendant comments, chat message bodies, and Markdown attachment previews.
+Prose and long URLs/paths still wrap. `ChatTimeline` tool output is wrapping
+text rather than a horizontal viewport; actual chat Markdown lives in
+`ChatMessageList`. HTML attachments use a standalone WebView with its own
+document scrolling and no enclosing RN vertical ScrollView. There is no
+Android drawer, swipeable tab pager, or full-screen navigation pan on these
+surfaces. The existing width constraints and clipping remain in place; neither
+the arbiter nor its Yoga-managed code host measures or enlarges the viewport.
 
 After Android prebuild, run the API 32 Robolectric tests from `apps/mobile/android`:
 
 ```bash
 ./gradlew :react-native-enriched-markdown:testDebugUnitTest --tests '*OverflowHorizontalScrollViewTest' --tests '*MarkdownWidthTest' --tests '*MarkdownGfmLayoutTest'
 ```
+
+`OverflowHorizontalScrollViewTest` dispatches complete finger event streams
+through a real vertical page, both with and without nested-scroll acceptance.
+The latter reproduces the old table failure. It covers the native block and
+the guard/delegate structure used by RN code, horizontal slopes from 0 to
+0.9 in either vertical direction at 8/32/120ms sample intervals, both scroll
+directions, edge reversal, vertical handoff, narrow content, pointer switching,
+tap/link/long-press preservation, selectable text, React responder cancellation,
+and UP/CANCEL cleanup. The code delegate in this suite is Android's
+`HorizontalScrollView`, not Fabric's RN ScrollView. Vitest checks the real
+CodeBlock's guard/ScrollView/selection/copy wiring and the timeline's keyboard
+and selection callbacks; it does not simulate native event dispatch.
+These checks do not establish real-device gesture success rates, Fabric layout,
+HTML WebView behavior, or iOS visual parity.
 
 For regression testing, paste this fixture into a Markdown attachment, an issue
 description, a comment, or a chat message. Add enough prose after it for the
