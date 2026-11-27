@@ -7,9 +7,22 @@ signing, production/staging/private endpoints and standalone APK verification.
 `pnpm -C apps/mobile android:release` builds a signed production APK using your
 external keystore. The iPhone instructions below require macOS/Xcode.
 
-The bottom bar opens Inbox, Issues, Projects, Chat and More directly.
+The bottom bar opens Inbox, Issues, Projects, Chat, Pinned and More in that order.
+Pinned opens the pinned issues and projects list with the tab bar still visible.
 My Issues is hidden from the bar. More contains account settings, the workspace
-switcher and pinned items.
+switcher and another entry to the same pinned items.
+
+To check an authenticated Expo Web preview for clipped English tab labels and
+overlapping touch targets at 320px, run from the repository root:
+
+```bash
+MOBILE_PREVIEW_URL=http://localhost:8187/demo/pins pnpm exec playwright test e2e/mobile-tab-bar.spec.ts
+```
+
+The check measures unconstrained text with the rendered font; DOM text and
+`scrollWidth` alone cannot detect every ellipsis. It also exercises Projects →
+Pinned and captures both themes. Without `MOBILE_PREVIEW_URL`, only the detector
+regression cases run. This preview check does not verify native Android rendering.
 
 Issue lists load every server page. The workspace Issues tab orders status
 sections as Plan/Backlog, Todo, In Progress, In Review, Blocked and Done.
