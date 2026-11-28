@@ -212,7 +212,9 @@
     "search_people_issues": "搜尋成員或任務",
     "reference_issue": "引用任務",
     "clear": "清除",
-    "no_access": "無呼叫權限"
+    "no_access": "無呼叫權限",
+    "group_load_failed": "無法載入{{group}}。",
+    "retry_group": "重新載入{{group}}"
   },
   "comments": {
     "reply": "回覆",

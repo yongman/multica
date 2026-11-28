@@ -1,4 +1,4 @@
-import type { Agent, Squad } from "@multica/core/types";
+import type { Agent, RuntimeDevice, Squad } from "@multica/core/types";
 import { describe, expect, it } from "vitest";
 import { buildQuickCreateRequest, getIssueCreators } from "./issue-creators";
 
@@ -87,7 +87,7 @@ describe("quick-create actors", () => {
     }
   });
 
-  it("supports legacy agents without runtime_bound or coarse availability", () => {
+  it("uses the visible runtime for agents without a coarse projection", () => {
     expect(
       getIssueCreators(
         [
@@ -99,8 +99,58 @@ describe("quick-create actors", () => {
         ],
         [squad],
         context,
+        [{ id: leader.runtime_id, status: "online" } as RuntimeDevice],
       ).squads,
     ).toEqual([squad]);
+  });
+
+  it("blocks a visible runtime that becomes offline, even with a recent heartbeat", () => {
+    const agent = { ...leader, runtime_availability: undefined };
+    const runtime = {
+      id: leader.runtime_id,
+      status: "online",
+      last_seen_at: new Date().toISOString(),
+    } as RuntimeDevice;
+    expect(
+      getIssueCreators([agent], [squad], context, [runtime]).squads,
+    ).toEqual([squad]);
+    const offline = getIssueCreators([agent], [squad], context, [
+      { ...runtime, status: "offline" },
+    ]);
+    expect(offline.squads).toEqual([]);
+    expect(
+      buildQuickCreateRequest(
+        { type: "squad", id: squad.id },
+        "Keep my draft",
+        offline,
+      ),
+    ).toBeNull();
+  });
+
+  it("prefers a visible runtime row to a stale agent projection", () => {
+    expect(
+      getIssueCreators([leader], [squad], context, [
+        { id: leader.runtime_id, status: "offline" } as RuntimeDevice,
+      ]).squads,
+    ).toEqual([]);
+    expect(
+      getIssueCreators(
+        [{ ...leader, runtime_availability: "offline" }],
+        [squad],
+        context,
+        [{ id: leader.runtime_id, status: "online" } as RuntimeDevice],
+      ).squads,
+    ).toEqual([squad]);
+  });
+
+  it("does not assume availability when both the runtime and projection are absent", () => {
+    expect(
+      getIssueCreators(
+        [{ ...leader, runtime_availability: undefined }],
+        [squad],
+        context,
+      ).squads,
+    ).toEqual([]);
   });
 
   it("does not infer offline from a hidden runtime or a busy/unstable agent", () => {

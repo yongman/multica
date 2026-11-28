@@ -46,7 +46,10 @@ export function usePresenceRealtime() {
 
         // Agent identity churn — visible in pickers / chat header straight
         // away, so invalidate the cached list.
-        ws.on("agent:status", invalidateAgents),
+        ws.on("agent:status", () => {
+          invalidateAgents();
+          invalidateRuntimes();
+        }),
         ws.on("agent:created", invalidateAgents),
         ws.on("agent:archived", invalidateAgents),
         ws.on("agent:restored", invalidateAgents),

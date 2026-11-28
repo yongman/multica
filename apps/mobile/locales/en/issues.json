@@ -215,7 +215,9 @@
     "search_people_issues": "Search people or issues",
     "reference_issue": "Reference an issue",
     "clear": "Clear",
-    "no_access": "No permission to run"
+    "no_access": "No permission to run",
+    "group_load_failed": "Couldn’t load {{group}}.",
+    "retry_group": "Retry {{group}}"
   },
   "comments": {
     "reply": "Reply",

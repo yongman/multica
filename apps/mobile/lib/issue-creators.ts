@@ -1,4 +1,4 @@
-import type { Agent, Squad } from "@multica/core/types";
+import type { Agent, RuntimeDevice, Squad } from "@multica/core/types";
 import { canAssignAgentToIssue } from "@multica/core/permissions/rules";
 import type { PermissionContext } from "@multica/core/permissions";
 import type { QuickCreateIssueRequest } from "@/data/api";
@@ -12,14 +12,27 @@ export function getIssueCreators(
   agents: Agent[],
   squads: Squad[],
   context: PermissionContext,
+  runtimes: readonly RuntimeDevice[] = [],
 ) {
-  const availableAgents = agents.filter(
-    (agent) =>
+  const runtimesById = new Map(
+    runtimes.map((runtime) => [runtime.id, runtime]),
+  );
+  const availableAgents = agents.filter((agent) => {
+    const runtime = runtimesById.get(agent.runtime_id);
+    // Visible rows are authoritative. An offline row can still have a
+    // recently-lost presence dot, but cannot accept an immediate request.
+    // Only hidden runtimes use the privacy-safe projection from the agent.
+    const available = runtime
+      ? runtime.status === "online"
+      : agent.runtime_availability === "online" ||
+        agent.runtime_availability === "unstable";
+    return (
       !agent.archived_at &&
       isAgentRuntimeBound(agent) &&
-      agent.runtime_availability !== "offline" &&
-      canAssignAgentToIssue(agent, context).allowed,
-  );
+      available &&
+      canAssignAgentToIssue(agent, context).allowed
+    );
+  });
   const availableIds = new Set(availableAgents.map((agent) => agent.id));
   return {
     agents: availableAgents,

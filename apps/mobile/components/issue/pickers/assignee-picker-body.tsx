@@ -30,6 +30,7 @@ import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { memberListOptions } from "@/data/queries/members";
 import { agentListOptions } from "@/data/queries/agents";
 import { squadListOptions } from "@/data/queries/squads";
+import { runtimeListOptions } from "@/data/queries/runtimes";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { useAuthStore } from "@/data/auth-store";
 import { getIssueCreators } from "@/lib/issue-creators";
@@ -84,15 +85,27 @@ export function AssigneePickerBody({
   const membersQuery = useQuery(memberListOptions(wsId));
   const agentsQuery = useQuery(agentListOptions(wsId));
   const squadsQuery = useQuery(squadListOptions(wsId));
+  const quickCreate = mode === "quick-create";
+  const runtimesQuery = useQuery({
+    ...runtimeListOptions(wsId),
+    enabled: !!wsId && quickCreate,
+  });
   const { data: members = [] } = membersQuery;
   const { data: agents = [] } = agentsQuery;
   const { data: squads = [] } = squadsQuery;
   const role =
     members.find((member) => member.user_id === userId)?.role ?? null;
-  const quickCreate = mode === "quick-create";
   const loadFailed =
-    membersQuery.isError || agentsQuery.isError || squadsQuery.isError;
-  const loading = !membersQuery.data || !agentsQuery.data || !squadsQuery.data;
+    membersQuery.isError ||
+    agentsQuery.isError ||
+    squadsQuery.isError ||
+    (quickCreate && runtimesQuery.isError);
+  const loading =
+    !membersQuery.data ||
+    !agentsQuery.data ||
+    !squadsQuery.data ||
+    (quickCreate && !runtimesQuery.data);
+  const runtimes = runtimesQuery.data;
   const runnableAgentIds = useMemo(
     () =>
       new Set(
@@ -115,21 +128,30 @@ export function AssigneePickerBody({
     const q = query.trim().toLowerCase();
     const matchName = (name: string) => !q || name.toLowerCase().includes(q);
 
-    const memberRows: Row[] = [...members]
+    const memberRows: Row[] = [...(membersQuery.isError ? [] : members)]
       .filter((m) => matchName(m.name))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((m) => ({ kind: "member" as const, member: m }));
-    const available = getIssueCreators(agents, squads, { userId, role });
-    const agentRows: Row[] = [...(quickCreate ? available.agents : agents)]
+    const available = getIssueCreators(
+      agents,
+      squads,
+      { userId, role },
+      runtimes ?? [],
+    );
+    const agentRows: Row[] = [
+      ...(agentsQuery.isError ? [] : quickCreate ? available.agents : agents),
+    ]
       .filter((a) => !a.archived_at && matchName(a.name))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((a) => ({ kind: "agent" as const, agent: a }));
-    const squadRows: Row[] = [...(quickCreate ? available.squads : squads)]
+    const squadRows: Row[] = [
+      ...(squadsQuery.isError ? [] : quickCreate ? available.squads : squads),
+    ]
       .filter((s) => !s.archived_at && matchName(s.name))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((s) => ({ kind: "squad" as const, squad: s }));
 
-    if (loadFailed || loading) return [];
+    if (quickCreate && (loadFailed || loading)) return [];
     if (quickCreate) {
       return [
         ...(squadRows.length
@@ -173,6 +195,10 @@ export function AssigneePickerBody({
     role,
     loadFailed,
     loading,
+    runtimes,
+    membersQuery.isError,
+    agentsQuery.isError,
+    squadsQuery.isError,
   ]);
 
   const isSelected = (row: Row) => isRowSelected(value, row);
@@ -323,7 +349,7 @@ export function AssigneePickerBody({
       }}
       ListEmptyComponent={
         <View className="px-4 py-8 items-center gap-3">
-          {loadFailed ? (
+          {quickCreate && loadFailed ? (
             <>
               <Text className="text-sm text-destructive">
                 {t("new.creators_load_failed")}
@@ -334,12 +360,13 @@ export function AssigneePickerBody({
                   void membersQuery.refetch();
                   void agentsQuery.refetch();
                   void squadsQuery.refetch();
+                  void runtimesQuery.refetch();
                 }}
               >
                 <Text>{t("common:actions.retry")}</Text>
               </Button>
             </>
-          ) : loading ? (
+          ) : loading && quickCreate ? (
             <ActivityIndicator />
           ) : (
             <Text className="text-sm text-muted-foreground">
@@ -351,6 +378,39 @@ export function AssigneePickerBody({
             </Text>
           )}
         </View>
+      }
+      ListFooterComponent={
+        !quickCreate ? (
+          <View className="gap-3 px-4 pb-4">
+            {[
+              { label: t("picker.people"), query: membersQuery },
+              { label: t("picker.agents"), query: agentsQuery },
+              { label: t("picker.squads"), query: squadsQuery },
+            ].map(({ label, query: group }) =>
+              group.isError ? (
+                <View key={label} className="gap-2">
+                  <Text className="text-sm text-destructive">
+                    {t("picker.group_load_failed", { group: label })}
+                  </Text>
+                  <Button
+                    variant="outline"
+                    className="self-start"
+                    onPress={() => {
+                      void group.refetch();
+                    }}
+                  >
+                    <Text>{t("picker.retry_group", { group: label })}</Text>
+                  </Button>
+                </View>
+              ) : !group.data ? (
+                <View key={label} className="flex-row items-center gap-2">
+                  <ActivityIndicator />
+                  <Text className="text-sm text-muted-foreground">{label}</Text>
+                </View>
+              ) : null,
+            )}
+          </View>
+        ) : null
       }
     />
   );

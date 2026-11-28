@@ -51,6 +51,7 @@ import { useCreateIssue, useQuickCreateIssue } from "@/data/mutations/issues";
 import { agentListOptions } from "@/data/queries/agents";
 import { memberListOptions } from "@/data/queries/members";
 import { squadListOptions } from "@/data/queries/squads";
+import { runtimeListOptions } from "@/data/queries/runtimes";
 import {
   findProject,
   projectDetailOptions,
@@ -64,6 +65,7 @@ import {
   getIssueCreators,
 } from "@/lib/issue-creators";
 import { useMentionInput } from "@/lib/use-mention-input";
+import { newIssueMentionMaxHeight } from "@/lib/new-issue-layout";
 import { useT } from "@/lib/i18n";
 
 export default function NewIssueModal() {
@@ -121,6 +123,8 @@ function NewIssueForm({ initialProject }: { initialProject: Project | null }) {
   const [agentMode, setAgentMode] = useState(false);
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [contentHeight, setContentHeight] = useState(0);
+  const [footerHeight, setFooterHeight] = useState(0);
   const submitting = useRef(false);
   const description = useMentionInput();
   // Attribute chips (status / priority / assignee / due date / project)
@@ -169,18 +173,26 @@ function NewIssueForm({ initialProject }: { initialProject: Project | null }) {
     ...squadListOptions(wsId),
     enabled: !!wsId && agentMode,
   });
+  const runtimes = useQuery({
+    ...runtimeListOptions(wsId),
+    enabled: !!wsId && agentMode,
+  });
   const role =
     members.data?.find((member) => member.user_id === userId)?.role ?? null;
-  const available = getIssueCreators(agents.data ?? [], squads.data ?? [], {
-    userId,
-    role,
-  });
+  const available = getIssueCreators(
+    agents.data ?? [],
+    squads.data ?? [],
+    { userId, role },
+    runtimes.data ?? [],
+  );
   const selectedCreator =
     creator?.type === "squad"
       ? available.squads.find((squad) => squad.id === creator.id)
       : available.agents.find((agent) => agent.id === creator?.id);
-  const creatorListFailed = agents.isError || members.isError || squads.isError;
-  const waitingForCreators = !agents.data || !members.data || !squads.data;
+  const creatorListFailed =
+    agents.isError || members.isError || squads.isError || runtimes.isError;
+  const waitingForCreators =
+    !agents.data || !members.data || !squads.data || !runtimes.data;
   const agentRequest =
     agentMode && !creatorListFailed && !waitingForCreators
       ? buildQuickCreateRequest(creator, prompt, available, projectId)
@@ -266,154 +278,174 @@ function NewIssueForm({ initialProject }: { initialProject: Project | null }) {
         className="flex-1 bg-background"
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="px-4 pt-4 pb-6 gap-4"
-          keyboardShouldPersistTaps="handled"
-        >
-          {agentMode ? (
-            <>
-              <TextInput
-                value={prompt}
-                onChangeText={setPrompt}
-                accessibilityLabel={t("new.agent_prompt")}
-                placeholder={t("new.agent_prompt")}
-                placeholderTextColor={MOBILE_PLACEHOLDER_COLOR}
-                className="min-h-28 py-2 text-base text-foreground"
-                multiline
-                textAlignVertical="top"
-                editable={!isSubmitting}
-              />
-              {creatorListFailed ? (
-                <View className="gap-2">
-                  <Text className="text-sm text-destructive">
-                    {t("new.creators_load_failed")}
-                  </Text>
-                  <Button
-                    variant="outline"
-                    className="self-start"
-                    onPress={() => {
-                      void agents.refetch();
-                      void members.refetch();
-                      void squads.refetch();
-                    }}
-                  >
-                    <Text>{t("common:actions.retry")}</Text>
-                  </Button>
-                </View>
-              ) : waitingForCreators ? (
-                <ActivityIndicator />
-              ) : (
-                <>
-                  <Button
-                    variant="outline"
-                    className="self-start max-w-full"
-                    disabled={isSubmitting || !wsSlug}
-                    onPress={() => {
-                      if (!wsSlug) return;
-                      Keyboard.dismiss();
-                      router.push({
-                        pathname: "/[workspace]/new-issue-picker/creator",
-                        params: { workspace: wsSlug },
-                      });
-                    }}
-                  >
-                    {selectedCreator && creator && (
-                      <ActorAvatar
-                        type={creator.type}
-                        id={creator.id}
-                        size={20}
-                      />
-                    )}
-                    <Text className="shrink" numberOfLines={1}>
-                      {selectedCreator
-                        ? t(
-                            creator?.type === "squad"
-                              ? "new.selected_squad"
-                              : "new.selected_agent",
-                            {
-                              name: selectedCreator.name,
-                            },
-                          )
-                        : t("new.choose_creator")}
-                    </Text>
-                  </Button>
-                  {creator && !selectedCreator ? (
-                    <Text className="text-sm text-destructive">
-                      {t("new.creator_unavailable")}
-                    </Text>
-                  ) : null}
-                  {available.agents.length === 0 &&
-                  available.squads.length === 0 ? (
-                    <Text className="text-sm text-muted-foreground">
-                      {t("new.no_creators")}
-                    </Text>
-                  ) : null}
-                </>
-              )}
-              <CreateFormProjectChip disabled={isSubmitting} />
-            </>
-          ) : (
-            <>
-              <TextInput
-                value={title}
-                onChangeText={setTitle}
-                placeholder={t("new.title_placeholder")}
-                placeholderTextColor={MOBILE_PLACEHOLDER_COLOR}
-                className="text-2xl font-semibold text-foreground py-2"
-                accessibilityLabel={t("new.title_placeholder")}
-                autoFocus
-                returnKeyType="next"
-                editable={!isSubmitting}
-              />
-              <DescriptionField
-                description={description}
-                disabled={isSubmitting}
-              />
-              <CreateFormAttributeRow />
-            </>
-          )}
-          {projectUnavailable && (
-            <Text className="text-sm text-destructive">
-              {t("new.project_unavailable")}
-            </Text>
-          )}
-        </ScrollView>
-
-        {/* Normal layout keeps suggestions, modes and the keyboard separate. */}
-        {!agentMode && <MentionSuggestionBar {...description.suggestionBar} />}
+        {/* Measure the space after keyboard avoidance, not the full screen. */}
         <View
-          role="tablist"
-          className="shrink-0 flex-row gap-2 border-t border-border bg-background px-4 pt-3"
-          style={{
-            paddingBottom: keyboardVisible ? 12 : Math.max(insets.bottom, 12),
-          }}
+          className="flex-1 min-h-0"
+          onLayout={(event) =>
+            setContentHeight(event.nativeEvent.layout.height)
+          }
         >
-          <Button
-            role="tab"
-            aria-selected={!agentMode}
-            className="flex-1 h-auto min-h-11 py-3"
-            variant={agentMode ? "outline" : "default"}
-            disabled={isSubmitting}
-            accessibilityState={{
-              selected: !agentMode,
-              disabled: isSubmitting,
+          <ScrollView
+            className="flex-1 min-h-0"
+            contentContainerClassName="px-4 pt-4 pb-6 gap-4"
+            keyboardShouldPersistTaps="handled"
+          >
+            {agentMode ? (
+              <>
+                <TextInput
+                  value={prompt}
+                  onChangeText={setPrompt}
+                  accessibilityLabel={t("new.agent_prompt")}
+                  placeholder={t("new.agent_prompt")}
+                  placeholderTextColor={MOBILE_PLACEHOLDER_COLOR}
+                  className="min-h-28 py-2 text-base text-foreground"
+                  multiline
+                  textAlignVertical="top"
+                  editable={!isSubmitting}
+                />
+                {creatorListFailed ? (
+                  <View className="gap-2">
+                    <Text className="text-sm text-destructive">
+                      {t("new.creators_load_failed")}
+                    </Text>
+                    <Button
+                      variant="outline"
+                      className="self-start"
+                      onPress={() => {
+                        void agents.refetch();
+                        void members.refetch();
+                        void squads.refetch();
+                        void runtimes.refetch();
+                      }}
+                    >
+                      <Text>{t("common:actions.retry")}</Text>
+                    </Button>
+                  </View>
+                ) : waitingForCreators ? (
+                  <ActivityIndicator />
+                ) : (
+                  <>
+                    <Button
+                      variant="outline"
+                      className="self-start max-w-full"
+                      disabled={isSubmitting || !wsSlug}
+                      onPress={() => {
+                        if (!wsSlug) return;
+                        Keyboard.dismiss();
+                        router.push({
+                          pathname: "/[workspace]/new-issue-picker/creator",
+                          params: { workspace: wsSlug },
+                        });
+                      }}
+                    >
+                      {selectedCreator && creator && (
+                        <ActorAvatar
+                          type={creator.type}
+                          id={creator.id}
+                          size={20}
+                        />
+                      )}
+                      <Text className="shrink" numberOfLines={1}>
+                        {selectedCreator
+                          ? t(
+                              creator?.type === "squad"
+                                ? "new.selected_squad"
+                                : "new.selected_agent",
+                              {
+                                name: selectedCreator.name,
+                              },
+                            )
+                          : t("new.choose_creator")}
+                      </Text>
+                    </Button>
+                    {creator && !selectedCreator ? (
+                      <Text className="text-sm text-destructive">
+                        {t("new.creator_unavailable")}
+                      </Text>
+                    ) : null}
+                    {available.agents.length === 0 &&
+                    available.squads.length === 0 ? (
+                      <Text className="text-sm text-muted-foreground">
+                        {t("new.no_creators")}
+                      </Text>
+                    ) : null}
+                  </>
+                )}
+                <CreateFormProjectChip disabled={isSubmitting} />
+              </>
+            ) : (
+              <>
+                <TextInput
+                  value={title}
+                  onChangeText={setTitle}
+                  placeholder={t("new.title_placeholder")}
+                  placeholderTextColor={MOBILE_PLACEHOLDER_COLOR}
+                  className="text-2xl font-semibold text-foreground py-2"
+                  accessibilityLabel={t("new.title_placeholder")}
+                  autoFocus
+                  returnKeyType="next"
+                  editable={!isSubmitting}
+                />
+                <DescriptionField
+                  description={description}
+                  disabled={isSubmitting}
+                />
+                <CreateFormAttributeRow />
+              </>
+            )}
+            {projectUnavailable && (
+              <Text className="text-sm text-destructive">
+                {t("new.project_unavailable")}
+              </Text>
+            )}
+          </ScrollView>
+
+          {/* Normal layout keeps suggestions, modes and the keyboard separate. */}
+          {!agentMode && (
+            <MentionSuggestionBar
+              {...description.suggestionBar}
+              maxHeight={newIssueMentionMaxHeight(contentHeight, footerHeight)}
+            />
+          )}
+          <View
+            role="tablist"
+            onLayout={(event) =>
+              setFooterHeight(event.nativeEvent.layout.height)
+            }
+            className="shrink-0 flex-row gap-2 border-t border-border bg-background px-4 pt-3"
+            style={{
+              paddingBottom: keyboardVisible ? 12 : Math.max(insets.bottom, 12),
             }}
-            onPress={() => setAgentMode(false)}
           >
-            <Text className="shrink text-center">{t("new.manual_mode")}</Text>
-          </Button>
-          <Button
-            role="tab"
-            aria-selected={agentMode}
-            className="flex-1 h-auto min-h-11 py-3"
-            variant={agentMode ? "default" : "outline"}
-            disabled={isSubmitting}
-            accessibilityState={{ selected: agentMode, disabled: isSubmitting }}
-            onPress={() => setAgentMode(true)}
-          >
-            <Text className="shrink text-center">{t("new.agent_mode")}</Text>
-          </Button>
+            <Button
+              role="tab"
+              aria-selected={!agentMode}
+              className="flex-1 h-auto min-h-11 py-3"
+              variant={agentMode ? "outline" : "default"}
+              disabled={isSubmitting}
+              accessibilityState={{
+                selected: !agentMode,
+                disabled: isSubmitting,
+              }}
+              onPress={() => setAgentMode(false)}
+            >
+              <Text className="shrink text-center">{t("new.manual_mode")}</Text>
+            </Button>
+            <Button
+              role="tab"
+              aria-selected={agentMode}
+              className="flex-1 h-auto min-h-11 py-3"
+              variant={agentMode ? "default" : "outline"}
+              disabled={isSubmitting}
+              accessibilityState={{
+                selected: agentMode,
+                disabled: isSubmitting,
+              }}
+              onPress={() => setAgentMode(true)}
+            >
+              <Text className="shrink text-center">{t("new.agent_mode")}</Text>
+            </Button>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </>

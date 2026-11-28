@@ -1,4 +1,9 @@
-import type { Agent, MemberWithUser, Squad } from "@multica/core/types";
+import type {
+  Agent,
+  MemberWithUser,
+  RuntimeDevice,
+  Squad,
+} from "@multica/core/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AssigneePickerBody } from "./assignee-picker-body";
 
@@ -6,6 +11,7 @@ const state = vi.hoisted(() => ({
   agents: [] as Agent[],
   squads: [] as Squad[],
   members: [] as MemberWithUser[],
+  runtimes: [] as RuntimeDevice[],
   failed: "",
   loading: "",
   refetch: vi.fn(),
@@ -49,7 +55,7 @@ vi.mock("@tanstack/react-query", () => ({
     data:
       queryKey[0] === state.loading
         ? undefined
-        : state[queryKey[0] as "agents" | "squads" | "members"],
+        : state[queryKey[0] as "agents" | "squads" | "members" | "runtimes"],
     isError: queryKey[0] === state.failed,
     refetch: state.refetch,
   }),
@@ -92,6 +98,7 @@ describe("assignee/creator picker wiring (native modules mocked)", () => {
     state.agents = [agent];
     state.squads = [squad];
     state.members = [member];
+    state.runtimes = [];
     state.failed = "";
     state.loading = "";
     state.refetch.mockClear();
@@ -155,7 +162,7 @@ describe("assignee/creator picker wiring (native modules mocked)", () => {
     expect(props.renderItem({ item: props.data[1] }).props.disabled).toBe(true);
   });
 
-  it.each(["agents", "squads", "members"])(
+  it.each(["agents", "squads", "members", "runtimes"])(
     "does not expose cached rows after %s fails or before it loads",
     (key) => {
       state.failed = key;
@@ -165,4 +172,46 @@ describe("assignee/creator picker wiring (native modules mocked)", () => {
       expect(render().props.data).toEqual([]);
     },
   );
+
+  it("removes an owner-visible squad when its runtime goes offline without a projection", () => {
+    state.agents = [{ ...agent, runtime_availability: undefined }];
+    state.runtimes = [{ id: "runtime-1", status: "online" } as RuntimeDevice];
+    expect(
+      render().props.data.some((row: { kind: string }) => row.kind === "squad"),
+    ).toBe(true);
+    state.runtimes = [{ ...state.runtimes[0], status: "offline" }];
+    expect(render().props.data).toEqual([]);
+  });
+
+  it.each(["failed", "loading"] as const)(
+    "keeps people and Unassigned usable when squads are %s",
+    (condition) => {
+      state[condition] = "squads";
+      const { props, onChange } = render("assign");
+      const unassigned = props.data.find(
+        (row: { kind: string }) => row.kind === "unassigned",
+      );
+      const person = props.data.find(
+        (row: { kind: string }) => row.kind === "member",
+      );
+      props.renderItem({ item: unassigned }).props.onPress();
+      props.renderItem({ item: person }).props.onPress();
+      expect(onChange.mock.calls).toEqual([
+        [null],
+        [{ type: "member", id: member.user_id }],
+      ]);
+      expect(props.ListFooterComponent).not.toBeNull();
+    },
+  );
+
+  it("provides a retry action beside the failed assignment group, including stale cached rows", () => {
+    state.failed = "squads";
+    const { props } = render("assign");
+    expect(
+      props.data.some((row: { kind: string }) => row.kind === "squad"),
+    ).toBe(false);
+    const failedGroup = props.ListFooterComponent.props.children.find(Boolean);
+    failedGroup.props.children[1].props.onPress();
+    expect(state.refetch).toHaveBeenCalledOnce();
+  });
 });

@@ -70,6 +70,8 @@ interface Props {
   /** Default `"comment"` to preserve existing comment-composer and
    *  new-issue behaviour. `"chat"` switches the bar to issue mode. */
   mode?: Mode;
+  /** A caller with bottom controls can reserve input space above the keyboard. */
+  maxHeight?: number;
 }
 
 const RECENT_LIMIT = 5;
@@ -80,6 +82,7 @@ export function MentionSuggestionBar({
   query,
   onSelect,
   mode = "comment",
+  maxHeight = 220,
 }: Props) {
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
   const isChat = mode === "chat";
@@ -228,7 +231,7 @@ export function MentionSuggestionBar({
     // Animated.View outer + className on inner View) — single follow-up.
     <View
       className="bg-background border-b border-border"
-      style={{ maxHeight: 220 }}
+      style={{ maxHeight, flexShrink: 1, overflow: "hidden" }}
     >
       <FlatList
         data={rows}
