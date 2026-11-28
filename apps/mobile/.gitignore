@@ -19,6 +19,10 @@ android/
 !modules/markdown-scroll-guard/android/build.gradle
 !modules/markdown-scroll-guard/android/src/
 !modules/markdown-scroll-guard/android/src/**
+!modules/markdown-preview/android/
+!modules/markdown-preview/android/build.gradle
+!modules/markdown-preview/android/src/
+!modules/markdown-preview/android/src/**
 
 # Override the root .gitignore "data/" rule (intended for backend runtime
 # dirs). apps/mobile/data/ is source — TanStack Query queries, mutations,

@@ -51,6 +51,21 @@ describe("preview document isolation and theme", () => {
     expect(document.match(/<\/script>/g)).toHaveLength(1);
   });
 
+  it("blocks every network resource in both host and sandbox policies", () => {
+    const document = buildPreviewDocument({
+      code: '<img src="https://tracker.example/read"><script src="https://tracker.example/chart.js"></script>',
+      kind: "html", theme,
+    });
+    const policies = [...document.matchAll(/default-src 'none';[^"<]*/g)].map((match) => match[0]);
+    expect(policies).toHaveLength(2);
+    for (const policy of policies) {
+      expect(policy).not.toMatch(/https:|http:|\*/);
+      expect(policy).toContain("script-src 'unsafe-inline'");
+      expect(policy).toContain("img-src data:");
+      expect(policy).toContain("connect-src 'none'");
+    }
+  });
+
   it("supplies safe theme tokens and preserves authored light pages", () => {
     const themed = buildPreviewDocument({ code: "<style>body{color:var(--foreground)}</style>", kind: "html", theme });
     const light = buildPreviewDocument({ code: "<p>Light</p>", kind: "html", theme });

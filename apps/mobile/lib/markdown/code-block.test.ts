@@ -92,6 +92,12 @@ describe("code viewport touch and copy contract", () => {
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith(code);
   });
 
+  it("leaves the copy action to the rich frame when its own header is hidden", () => {
+    const root = CodeBlock({ code: "source", showHeader: false }) as Element;
+    expect(children(root)[0]).toBeNull();
+    expect(children(root)[1]!.type).toBe(ScrollGestureGuard);
+  });
+
   it("adds a bounded native host only on Android and forwards the actual ScrollView", () => {
     const viewport = createElement("ScrollView", { horizontal: true });
     const guarded = AndroidGuard({ children: viewport }) as Element;

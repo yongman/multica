@@ -13,6 +13,8 @@
     "copy": "複製程式碼"
   },
   "rich": {
+    "offline": "預覽已禁止載入外部資源。",
+    "unsupported": "請更新 Android System WebView 後使用預覽。",
     "preview": "預覽",
     "source": "原始碼",
     "fullscreen": "全螢幕檢視",

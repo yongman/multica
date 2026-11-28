@@ -109,7 +109,10 @@ const MEASUREMENT_SCRIPT = `
 })();
 `;
 
-const CONTENT_CSP = "default-src 'none'; script-src 'unsafe-inline' https:; style-src 'unsafe-inline' https:; img-src data: https:; font-src data: https:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+// Author documents stay offline even after opening the full-screen viewer.
+// The host policy also applies to srcdoc, so an author cannot relax it with
+// their own meta tag. Data images/fonts and inline bundled scripts still work.
+const CONTENT_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 
 /** A trusted bridge hosts an opaque-origin iframe; author markup never enters it. */
 export function buildPreviewDocument({
@@ -162,16 +165,24 @@ export function buildPreviewDocument({
   }
   const host = `
     const frame = document.getElementById('preview');
+    let windowStart = Date.now(), sent = 0;
     window.addEventListener('message', event => {
       if (event.source !== frame.contentWindow || !event.data || event.data[${JSON.stringify(MESSAGE_KEY)}] !== 1) return;
       const data = event.data;
+      const now = Date.now();
+      if (now - windowStart >= 1000) { windowStart = now; sent = 0; }
+      if (sent >= 10) return;
+      const bridge = window.MulticaPreviewBridge || window.ReactNativeWebView;
+      if (!bridge) return;
       if (data.type === 'height' && Number.isFinite(data.height)) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ ${MESSAGE_KEY}: 1, type: 'height', height: Math.max(0, Math.min(10000, data.height)) }));
+        sent++;
+        bridge.postMessage(JSON.stringify({ ${MESSAGE_KEY}: 1, type: 'height', height: Math.max(0, Math.min(10000, data.height)) }));
       } else if (data.type === 'error' && typeof data.message === 'string') {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ ${MESSAGE_KEY}: 1, type: 'error', message: data.message.slice(0, 500) }));
+        sent++;
+        bridge.postMessage(JSON.stringify({ ${MESSAGE_KEY}: 1, type: 'error', message: data.message.slice(0, 500) }));
       }
     });
     frame.srcdoc = ${scriptValue(document)};
   `;
-  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https:; style-src 'unsafe-inline' https:; img-src data: https:; font-src data: https:; frame-src about:; connect-src 'none'; base-uri 'none'; form-action 'none'"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:${scheme === "dark" ? "#0a0a0a" : "#fff"}}iframe{display:block;border:0;width:100%;height:100%}</style></head><body><iframe id="preview" title="Preview" sandbox="allow-scripts"></iframe>${scriptTag(host)}</body></html>`;
+  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${CONTENT_CSP.replace("frame-src 'none'", "frame-src about:")}"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:${scheme === "dark" ? "#0a0a0a" : "#fff"}}iframe{display:block;border:0;width:100%;height:100%}</style></head><body><iframe id="preview" title="Preview" sandbox="allow-scripts"></iframe>${scriptTag(host)}</body></html>`;
 }

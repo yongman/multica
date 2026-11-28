@@ -31,6 +31,17 @@ describe("overflow-prone Markdown segment routing", () => {
 });
 
 describe("rich preview routing", () => {
+  it.each([" ", "\t", " \t "])("preserves rich source with %j before the language", (separator) => {
+    for (const fence of ["```", "~~~"]) {
+      for (const kind of ["html", "mermaid"]) {
+        const code = '<script>const original = `\n- [x] exact source\n!file[name](https://example.com/file)\n`;</script>';
+        const input = `${fence}${separator}${kind} title="Original"\n${code}\n${fence}`;
+        const processed = preprocessMobileMarkdown(input);
+        expect(processed).toBe(input);
+        expect(splitMarkdown(processed)).toEqual([{ type: "preview", kind, title: "Original", code }]);
+      }
+    }
+  });
   it.each(["html", "mermaid"] as const)("upgrades closed %s with title while preserving source", (kind) => {
     const code = kind === "html" ? "<svg><text>中文</text></svg>" : "graph TD\nA --> B";
     expect(splitMarkdown(`Before\n\n\`\`\`${kind} title="Example"\n${code}\n\`\`\`\n\nAfter`)).toEqual([

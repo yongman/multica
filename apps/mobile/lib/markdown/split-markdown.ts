@@ -9,7 +9,7 @@
 import { marked, type Tokens } from "marked";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { normalizeUri } from "micromark-util-sanitize-uri";
-import { isClosedFence, parseFenceTitle } from "@multica/core/markdown/fence";
+import { isClosedFence, parseFenceTitle, richFenceLanguage } from "@multica/core/markdown/fence";
 
 function imageUrisBySource(input: string): Map<string, string> {
   // Marked's href has already lost backslash escapes. Read destinations from
@@ -73,8 +73,8 @@ export function splitMarkdown(input: string): MarkdownSegment[] {
     if (token.type === "code") {
       flushProse();
       const t = token as Tokens.Code;
-      const language = t.lang?.split(/\s+/, 1)[0];
-      if ((language === "html" || language === "mermaid") && isClosedFence(t.raw)) {
+      const language = richFenceLanguage(t.lang);
+      if (language && isClosedFence(t.raw)) {
         out.push({
           type: "preview",
           kind: language,

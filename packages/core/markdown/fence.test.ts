@@ -1,8 +1,19 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { isClosedFence, parseFenceTitle } from "./fence";
+import { isClosedFence, parseFenceTitle, richFenceLanguage } from "./fence";
 
 describe("rich fence metadata and closedness", () => {
+  it.each([
+    ["html", "html"],
+    [" html title='Document'", "html"],
+    ["\tmermaid title=Diagram", "mermaid"],
+    ["htmlbars", null],
+    ["HTML", null],
+    ["svg", null],
+    [undefined, null],
+  ])("classifies the parsed rich info string %j", (info, expected) => {
+    expect(richFenceLanguage(info)).toBe(expected);
+  });
   it.each([
     ["```html\n<div>done</div>\n```", true],
     ["~~~mermaid\r\ngraph TD\r\n~~~\r\n", true],

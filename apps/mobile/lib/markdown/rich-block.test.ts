@@ -24,14 +24,21 @@ vi.mock("react-native", () => ({
   View: "View", Modal: "Modal", Pressable: "Pressable", ScrollView: "ScrollView", ActivityIndicator: "Spinner",
 }));
 vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: "SafeAreaView" }));
-vi.mock("react-native-webview", () => ({ WebView: "WebView" }));
+vi.mock("./preview-webview", () => ({ PreviewWebView: "PreviewWebView" }));
 vi.mock("@/components/ui/button", () => ({ Button: "Button" }));
 vi.mock("@/components/ui/icon-button", () => ({ IconButton: "IconButton" }));
 vi.mock("@/components/ui/text", () => ({ Text: "Text" }));
 vi.mock("@/lib/i18n", () => ({ useT: () => ({ t: (key: string) => key }) }));
 vi.mock("@/lib/use-color-scheme", () => ({ useColorScheme: () => ({ isDarkColorScheme: false }) }));
 vi.mock("@/lib/theme", () => ({ THEME: { light: { background: "#fff", foreground: "#111" } } }));
-vi.mock("./code-block", () => ({ CodeBlock: "CodeBlock", CodeBlockHeader: "CodeBlockHeader" }));
+vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
+vi.mock("expo-haptics", () => ({ impactAsync: vi.fn(), ImpactFeedbackStyle: { Light: "light" } }));
+vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect" }));
+vi.mock("./scroll-gesture-guard", () => ({ ScrollGestureGuard: "ScrollGestureGuard" }));
+vi.mock("./shiki", () => ({
+  highlight: vi.fn(), resolveLang: () => null,
+  SHIKI_THEME_DARK: "dark", SHIKI_THEME_LIGHT: "light",
+}));
 
 import { RichBlock } from "./rich-block";
 
@@ -45,7 +52,21 @@ function descendants(element: unknown): Element[] {
   return [node, ...descendants(node.props.children)];
 }
 function find(root: Element, type: string, predicate: (props: Element["props"]) => boolean = () => true) {
-  return descendants(root).find((element) => element.type === type && predicate(element.props))!;
+  return descendants(root).find((element) => (
+    element.type === type || (typeof element.type === "function" && element.type.name === type)
+  ) && predicate(element.props))!;
+}
+function expandCodeHeaders(element: Element): Element {
+  if (typeof element.type === "function" && ["CodeBlock", "CodeBlockHeader"].includes(element.type.name)) {
+    return expandCodeHeaders((element.type as (props: object) => Element)(element.props));
+  }
+  const content = element.props.children;
+  const expand = (child: unknown): unknown => child && typeof child === "object" && "props" in child
+    ? expandCodeHeaders(child as Element) : child;
+  return {
+    ...element,
+    props: { ...element.props, children: Array.isArray(content) ? content.map(expand) : expand(content) },
+  };
 }
 function render(code = "<h1>Preview</h1>", selectable = false): Element {
   hooks.cursor = 0;
@@ -116,17 +137,47 @@ describe("rich block interaction wiring", () => {
     expect(vi.getTimerCount()).toBe(1);
     expect(rendered.props.style).toMatchObject({ minWidth: 0, maxWidth: "100%" });
     expect(find(rendered, "View", (props) => props.pointerEvents === "none")).toBeDefined();
-    const webview = find(rendered, "WebView");
-    expect(webview.props).toMatchObject({
-      allowFileAccess: false, allowFileAccessFromFileURLs: false,
-      allowUniversalAccessFromFileURLs: false, sharedCookiesEnabled: false,
-      thirdPartyCookiesEnabled: false, domStorageEnabled: false,
-      incognito: true, scrollEnabled: false, cacheEnabled: false,
-    });
-    webview.props.onMessage({ nativeEvent: { data: '{"__multicaMobilePreview":1,"type":"height","height":200}' } });
+    const webview = find(rendered, "PreviewWebView");
+    expect(webview.props.fullscreen).toBe(false);
+    webview.props.onMessage('{"__multicaMobilePreview":1,"type":"height","height":200}');
     expect(vi.getTimerCount()).toBe(0);
     if (typeof cleanup === "function") cleanup();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("uses actual source selection after failure and retries when Preview is tapped", () => {
+    let root = render();
+    descendants(root).find((element) => typeof element.props.document === "string")!.props.onError("Invalid diagram");
+    root = render();
+    const modes = descendants(root).filter((element) => element.type === "Button" && element.props.accessibilityState);
+    expect(modes.map((element) => element.props.accessibilityState.selected)).toEqual([false, true]);
+    modes[0]!.props.onPress();
+    root = render();
+    expect(find(root, "CodeBlock")).toBeUndefined();
+    expect(descendants(root).filter((element) => element.type === "Button" && element.props.accessibilityState).map((element) => element.props.accessibilityState.selected)).toEqual([true, false]);
+  });
+
+  it.each([false, true])("has one copy owner in source/error with fullscreen=%s", (fullscreen) => {
+    let root = render();
+    if (fullscreen) {
+      find(root, "IconButton").props.onPress();
+      root = render();
+    }
+    find(root, "Button", (props) => props.accessibilityState?.selected === false).props.onPress();
+    root = render();
+    expect(descendants(expandCodeHeaders(root)).filter((element) => element.props.accessibilityLabel === "code.copy")).toHaveLength(1);
+    expect(find(root, "CodeBlock").props.showHeader).toBe(false);
+    find(root, "Button", (props) => props.accessibilityState?.selected === false).props.onPress();
+    root = render();
+    descendants(root).find((element) => typeof element.props.document === "string")!.props.onError("Invalid diagram");
+    root = render();
+    expect(descendants(expandCodeHeaders(root)).filter((element) => element.props.accessibilityLabel === "code.copy")).toHaveLength(1);
+    expect(find(root, "CodeBlock").props.showHeader).toBe(false);
+    // Also exercise explicit Source selection in the same inline/modal host.
+    find(root, "Button", (props) => props.accessibilityState?.selected === true).props.onPress();
+    root = render();
+    expect(descendants(expandCodeHeaders(root)).filter((element) => element.props.accessibilityLabel === "code.copy")).toHaveLength(1);
+    expect(find(root, "CodeBlock").props.showHeader).toBe(false);
   });
 
   it("clears a pending timeout when the WebView unmounts", () => {

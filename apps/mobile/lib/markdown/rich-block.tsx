@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Text } from "@/components/ui/text";
@@ -11,13 +10,13 @@ import { useColorScheme } from "@/lib/use-color-scheme";
 import { CodeBlock, CodeBlockHeader } from "./code-block";
 import {
   buildPreviewDocument,
-  isPreviewNavigationAllowed,
   MERMAID_MAX_SOURCE_LENGTH,
   PREVIEW_MAX_SOURCE_LENGTH,
   readPreviewMessage,
   type PreviewKind,
 } from "./preview-document";
 import { previewTheme } from "./preview-theme";
+import { PreviewWebView } from "./preview-webview";
 
 interface Props {
   code: string;
@@ -43,6 +42,8 @@ function RichBlockContent({ code, kind, title, selectable = true }: Props) {
   const [height, setHeight] = useState(180);
   const [inlineHeight, setInlineHeight] = useState(268);
   const [error, setError] = useState<string | null>(null);
+  const sourceVisible = showSource || !!error || tooLarge;
+  const retryPreview = () => { setError(null); setShowSource(false); };
   const document = useMemo(() => {
     if (tooLarge) return "";
     // The generated IIFE is data loaded only for Mermaid, never evaluated by
@@ -61,17 +62,17 @@ function RichBlockContent({ code, kind, title, selectable = true }: Props) {
       <View className="flex-row items-center gap-1">
         <Button
           size="sm"
-          variant={!showSource ? "secondary" : "ghost"}
+          variant={!sourceVisible ? "secondary" : "ghost"}
           disabled={tooLarge}
-          accessibilityState={{ selected: !showSource, disabled: tooLarge }}
-          onPress={() => setShowSource(false)}
+          accessibilityState={{ selected: !sourceVisible, disabled: tooLarge }}
+          onPress={retryPreview}
         >
           <Text>{t("rich.preview")}</Text>
         </Button>
         <Button
           size="sm"
-          variant={showSource ? "secondary" : "ghost"}
-          accessibilityState={{ selected: showSource }}
+          variant={sourceVisible ? "secondary" : "ghost"}
+          accessibilityState={{ selected: sourceVisible }}
           onPress={() => setShowSource(true)}
         >
           <Text>{t("rich.source")}</Text>
@@ -83,17 +84,18 @@ function RichBlockContent({ code, kind, title, selectable = true }: Props) {
           onPress={() => setFullscreen(!fullscreen)}
         />
       </View>
+      {kind === "html" ? <Text className="text-xs text-muted-foreground">{t("rich.offline")}</Text> : null}
     </View>
   );
 
-  const body = showSource || error || tooLarge ? (
+  const body = sourceVisible ? (
     <View className={fullscreen ? "flex-1" : undefined}>
       {error || tooLarge ? (
         <View accessibilityRole="alert" className="gap-1 p-3">
           <Text className="text-sm text-muted-foreground">{t(tooLarge ? "rich.too_large" : "rich.failed")}</Text>
           {error ? <Text className="text-xs text-muted-foreground" selectable>{error}</Text> : null}
           {!tooLarge ? (
-            <Button size="sm" variant="outline" onPress={() => { setError(null); setShowSource(false); }}>
+            <Button size="sm" variant="outline" onPress={retryPreview}>
               <Text>{t("rich.retry")}</Text>
             </Button>
           ) : null}
@@ -101,9 +103,9 @@ function RichBlockContent({ code, kind, title, selectable = true }: Props) {
       ) : null}
       {fullscreen ? (
         <ScrollView style={{ flex: 1 }}>
-          <CodeBlock code={code} lang={kind} selectable={selectable} />
+          <CodeBlock code={code} lang={kind} selectable={selectable} showHeader={false} />
         </ScrollView>
-      ) : <CodeBlock code={code} lang={kind} selectable={selectable} />}
+      ) : <CodeBlock code={code} lang={kind} selectable={selectable} showHeader={false} />}
     </View>
   ) : (
     <PreviewSurface
@@ -159,7 +161,6 @@ function PreviewSurface({ document, fullscreen, height, onHeight, onError, onExp
   const { t } = useT("editor");
   const [loading, setLoading] = useState(true);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const source = useMemo(() => ({ html: document }), [document]);
   const clearTimer = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
@@ -168,8 +169,8 @@ function PreviewSurface({ document, fullscreen, height, onHeight, onError, onExp
     timer.current = setTimeout(() => onError(t("rich.timeout")), 15_000);
     return clearTimer;
   }, [onError, clearTimer, t]);
-  const onMessage = useCallback(({ nativeEvent }: WebViewMessageEvent) => {
-    const message = readPreviewMessage(nativeEvent.data);
+  const onMessage = useCallback((data: string) => {
+    const message = readPreviewMessage(data);
     if (!message) return;
     clearTimer();
     setLoading(false);
@@ -180,39 +181,11 @@ function PreviewSurface({ document, fullscreen, height, onHeight, onError, onExp
   return (
     <View style={fullscreen ? { flex: 1 } : { height, minWidth: 0, maxWidth: "100%" }}>
       <View pointerEvents={fullscreen ? "auto" : "none"} style={{ flex: 1 }}>
-        <WebView
-          source={source}
-          style={{ flex: 1, backgroundColor: "transparent" }}
-          containerStyle={{ minWidth: 0, maxWidth: "100%" }}
-          originWhitelist={["*"]}
-          onShouldStartLoadWithRequest={({ url }) => isPreviewNavigationAllowed(url)}
-          onOpenWindow={() => {}}
+        <PreviewWebView
+          document={document}
+          fullscreen={fullscreen}
           onMessage={onMessage}
-          javaScriptEnabled
-          javaScriptCanOpenWindowsAutomatically={false}
-          allowFileAccess={false}
-          allowFileAccessFromFileURLs={false}
-          allowUniversalAccessFromFileURLs={false}
-          domStorageEnabled={false}
-          sharedCookiesEnabled={false}
-          thirdPartyCookiesEnabled={false}
-          incognito
-          cacheEnabled={false}
-          geolocationEnabled={false}
-          mediaPlaybackRequiresUserAction
-          allowsFullscreenVideo={false}
-          allowsAirPlayForMediaPlayback={false}
-          mixedContentMode="never"
-          setSupportMultipleWindows
-          setBuiltInZoomControls={fullscreen}
-          setDisplayZoomControls={false}
-          textZoom={100}
-          scrollEnabled={fullscreen}
-          nestedScrollEnabled={false}
-          bounces={false}
-          onError={() => onError(t("rich.failed"))}
-          onRenderProcessGone={() => onError(t("rich.failed"))}
-          onContentProcessDidTerminate={() => onError(t("rich.failed"))}
+          onFailure={(reason) => onError(t(reason === "unsupported" ? "rich.unsupported" : "rich.failed"))}
         />
       </View>
       {loading ? (

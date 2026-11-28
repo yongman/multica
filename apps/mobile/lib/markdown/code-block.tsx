@@ -65,9 +65,11 @@ interface Props {
    * for the full rationale.
    */
   selectable?: boolean;
+  /** Rich blocks already own the title and copy action. */
+  showHeader?: boolean;
 }
 
-export function CodeBlock({ code, lang, selectable = true }: Props) {
+export function CodeBlock({ code, lang, selectable = true, showHeader = true }: Props) {
   const { isDarkColorScheme } = useColorScheme();
   const theme = isDarkColorScheme ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT;
   const resolvedLang = resolveLang(lang);
@@ -99,7 +101,7 @@ export function CodeBlock({ code, lang, selectable = true }: Props) {
 
   return (
     <View className={CODE_BLOCK_CONTAINER_CLASS}>
-      <CodeBlockHeader code={code} lang={lang} />
+      {showHeader ? <CodeBlockHeader code={code} lang={lang} /> : null}
       {/* RN's horizontal ScrollView defaults to flexGrow: 1. In a recycled,
           self-sized chat bubble that lets the child outgrow the FlashList
           cell instead of sizing to its code. */}

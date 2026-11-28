@@ -13,6 +13,8 @@
     "copy": "Copy code"
   },
   "rich": {
+    "offline": "External resources are blocked in previews.",
+    "unsupported": "Update Android System WebView to use previews.",
     "preview": "Preview",
     "source": "Source",
     "fullscreen": "Open full screen",
