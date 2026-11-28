@@ -29,6 +29,7 @@ import {
 } from "@multica/core/attachments/image-sequence";
 import type { Attachment } from "@multica/core/types";
 import { fromMarkdown } from "mdast-util-from-markdown";
+import { richFenceLanguage } from "@multica/core/markdown/fence";
 
 // File-card line matcher, kept in sync with web's parser in
 // `packages/ui/markdown/file-cards.ts` (NEW_FILE_CARD_RE + FILE_CARD_URL_PATTERN):
@@ -225,7 +226,22 @@ export function preprocessMobileMarkdown(
   attachments?: readonly Attachment[],
 ): string {
   if (!input) return "";
-  return preprocessTaskListStrikethrough(
-    preprocessFileCards(preprocessMentionShortcodes(stripHtml(input)), attachments),
+  const transform = (text: string) => preprocessTaskListStrikethrough(
+    preprocessFileCards(preprocessMentionShortcodes(stripHtml(text)), attachments),
   );
+  if (!/`{3}|~{3}/.test(input)) return transform(input);
+  // Author scripts and diagram labels are source, not Markdown. Protect even
+  // unfinished rich fences so streamed code never changes before it closes.
+  const tree = fromMarkdown(input);
+  let cursor = 0;
+  let output = "";
+  for (const node of tree.children) {
+    if (node.type !== "code" || !richFenceLanguage(node.lang)) continue;
+    const start = node.position?.start.offset;
+    const end = node.position?.end.offset;
+    if (start === undefined || end === undefined) continue;
+    output += transform(input.slice(cursor, start)) + input.slice(start, end);
+    cursor = end;
+  }
+  return output + transform(input.slice(cursor));
 }

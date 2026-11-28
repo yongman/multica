@@ -4,6 +4,7 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
+    "postinstall": "node scripts/prepare-markdown-preview.mjs",
     "android": "expo prebuild -p android --no-install && expo run:android",
     "android:release": "dotenv -e .env.production.local -e .env.production -- cross-env APP_ENV=production node scripts/android-release.mjs",
     "android:release:staging": "dotenv -e .env.staging -- cross-env APP_ENV=staging node scripts/android-release.mjs",
@@ -67,6 +68,7 @@
     "input-otp-native": "^0.5.0",
     "marked": "^18.0.3",
     "mdast-util-from-markdown": "2.0.3",
+    "mermaid": "11.14.0",
     "micromark-util-sanitize-uri": "2.0.1",
     "nativewind": "^4.1.23",
     "react": "19.2.3",

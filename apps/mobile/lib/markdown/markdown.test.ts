@@ -25,6 +25,7 @@ vi.mock("./markdown-style", () => ({
 }));
 vi.mock("./code-block", () => ({ CodeBlock: "CodeBlock" }));
 vi.mock("./markdown-image", () => ({ MarkdownImage: "MarkdownImage" }));
+vi.mock("./rich-block", () => ({ RichBlock: "RichBlock" }));
 
 import { Linking } from "react-native";
 import { router } from "expo-router";
@@ -92,6 +93,13 @@ describe("Markdown width and content contract", () => {
     const tree = render(`Before\n\n![wide](https://example.com/wide.png)\n\nAfter`);
     expect(tree.props.children.map((child) => child.type)).toEqual(["NativeMarkdown", "MarkdownImage", "NativeMarkdown"]);
     expect(tree.props.children[1]!.props.uri).toBe("https://example.com/wide.png");
+  });
+
+  it.each([false, true])("wires HTML/Mermaid through the shared renderer with selectable=%s", (selectable) => {
+    const tree = render('```html title="Chart"\n<b>Chart</b>\n```\n\n```mermaid\ngraph TD\nA --> B\n```', { selectable });
+    expect(tree.props.children.map((child) => child.type)).toEqual(["RichBlock", "RichBlock"]);
+    expect(tree.props.children[0]!.props).toMatchObject({ code: "<b>Chart</b>", kind: "html", title: "Chart", selectable });
+    expect(tree.props.children[1]!.props).toMatchObject({ code: "graph TD\nA --> B", kind: "mermaid", selectable });
   });
 
   it("keeps external link targets and internal mention navigation intact", () => {

@@ -12,6 +12,18 @@
     "copied": "程式碼已複製",
     "copy": "複製程式碼"
   },
+  "rich": {
+    "offline": "預覽已禁止載入外部資源。",
+    "unsupported": "請更新 Android System WebView 後使用預覽。",
+    "preview": "預覽",
+    "source": "原始碼",
+    "fullscreen": "全螢幕檢視",
+    "loading": "正在繪製預覽",
+    "failed": "無法繪製預覽，原始碼顯示在下方。",
+    "timeout": "預覽繪製逾時。",
+    "too_large": "內容過大，無法預覽，原始碼顯示在下方。",
+    "retry": "重試"
+  },
   "preview": {
     "title": "附件預覽",
     "failed": "無法預覽此檔案。"

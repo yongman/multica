@@ -57,12 +57,14 @@ content (string)
      HTML <br>                 →  CommonMark "  \n" hard break
   ↓ splitMarkdown                 (marked@18 lexer; we use the AST only)
      code fence          → { type:'code',  lang, code }
+     closed html/mermaid  → { type:'preview', kind, code, title }
      paragraph w/ image  → image promoted to block, text rejoins prose
      everything else     → { type:'prose', content: token.raw }
   ↓ render per-segment
      prose  → <EnrichedMarkdownText>   path A
      code   → <CodeBlock>              path B (controlled — no CJK mixing)
      image  → <MarkdownImage>          path B (controlled — single element)
+     preview → <RichBlock>             path C (isolated WebView)
 ```
 
 Each per-segment routing decision avoids the failure mode of the path it
@@ -74,7 +76,7 @@ chose:
 | Fenced code block | own `CodeBlock` with one `<Text>` per line, token spans nested but **content is code only — no CJK paragraphs to trigger UAX #14**. Shiki for highlighting | Native rendering can't expose Shiki tokens; React tree of code-only doesn't trigger the CJK amplification of the nested-text bug |
 | Image | `expo-image` wrapped in `Pressable` for lightbox dispatch. **One element, no nested-text mixing** | RN `<Image>` can't be inline in `<Text>`; lightbox needs `Pressable` not addressable inside attributed string |
 | Inline / display LaTeX | enriched-markdown's native math backend; Android oversized inline formulas use wrapping source fallback | Keeps formulas native without adding a WebView to prose |
-| (future) Mermaid | when needed, a separate component running Expo DOM Components | Avoids adding WebView startup cost to ordinary prose |
+| Closed top-level `html` / `mermaid` fence | `RichBlock`, using a native Android offline host / iOS WebView and a sandboxed iframe | Adds WebView cost only to rich blocks; prose and ordinary code keep their native routes |
 
 ### Marked@18 is used as a **lexer only**
 
@@ -128,12 +130,112 @@ upgrade because newly-added color fields may ship light-mode defaults.
 
 ### What we pay
 
-- Three rendering paths to maintain instead of one
+- Four segment renderers to maintain instead of one
 - Theme integration: every enriched color field must be explicitly mapped;
   hidden-default trap re-emerges on every enriched upgrade
 - Code blocks nested in a list item stay with the enriched prose stream
   (don't get Shiki) — top-level code is the >95% case, acceptable
-- Mermaid is not rendered natively; LaTeX depends on enriched-markdown's native math backend
+- Mermaid runs in an isolated WebView; LaTeX keeps enriched-markdown's native math backend
+
+### HTML and Mermaid previews
+
+The web entry point is now `packages/views/rich-content/`, reached through
+`editor/readonly-content.tsx`. Its dispatcher only upgrades exact, lowercase
+`html` and `mermaid` languages with a closed CommonMark fence. Both platforms
+share fence closedness and `title="..."` / `title='...'` / `title=...` parsing
+from `@multica/core/markdown/fence`. An open streaming fence stays source.
+Preprocessing preserves rich-fence source, including HTML doctypes, scripts,
+mention-like strings, file-card lines and task-list-looking content.
+
+Bare HTML on web is processed through rehype-raw and sanitize; a complete
+`<!doctype html>` document is not automatically an executable HTML preview.
+Mobile retains its existing inline HTML text/image conversion outside rich
+fences. Web has no standalone `svg`, Vega, Chart.js, or other chart-DSL fence
+dispatcher. SVG and JavaScript charts belong inside an `html` fence. Web math
+uses remark-math/KaTeX; mobile keeps its existing native inline/display math.
+Code nested in lists or quotes retains mobile's native wrapping fallback,
+including rich languages, to preserve surrounding layout and gestures.
+
+HTML/Mermaid open as previews with Preview/Source, copy and full-screen
+controls. Inline WebViews have no touch ownership: tapping opens an interactive
+full-screen viewer, where browser scrolling and pinch zoom are available.
+Source uses the unchanged guarded `CodeBlock` horizontal viewport. The
+full-screen viewer replaces the inline WebView and reserves its measured
+allocation; it does not create two live renderers. Closing/switching source,
+recycling a cell, or unmounting releases the WebView and its timeout. Stable
+source/theme props keep the document stable while surrounding chat text streams.
+Opening/closing full screen reloads authored script state, a mobile tradeoff.
+
+The WebView loads only an in-memory trusted host with an opaque-origin
+`sandbox="allow-scripts"` iframe. Author HTML cannot access the host document,
+app authentication or storage. Native file access, file-URL universal access,
+DOM storage, third-party cookies, geolocation, automatic windows and mixed
+content are disabled. Android uses `modules/markdown-preview`, an app-local
+Expo view over Android WebView. It does not enable incognito, clear cookies,
+clear cache or change the global cookie acceptance policy. iOS keeps its
+per-view nonpersistent WebView store. The bridge accepts bounded height/error
+messages only, with no native actions or external-link dispatch. Requests to navigate anywhere but the local document
+are rejected. Fragment links scroll within the sandbox. Forms, nested frames,
+objects and all network subresources/fetch/XHR are disallowed by both host and
+sandbox CSPs. Only inline scripts/styles and data images/fonts are supported;
+there is no external-resource opt-in, including in full screen. Android also
+sets `blockNetworkLoads`, `blockNetworkImage` and `LOAD_NO_CACHE`, and rejects
+network/file/content requests in its native resource client. No app bearer
+token or authenticated attachment URL is injected.
+The sandbox bootstrap removes standard/vendor WebRTC peer-connection
+constructors before author scripts run, and CSP declares `webrtc 'block'` for
+engines that support it. This closes ICE/STUN transport, which older engines
+do not cover with `connect-src`. Child frames have distinct opaque origins,
+workers are denied by CSP and popups by sandbox, preventing constructor
+borrowing from another realm.
+
+Android loads the trusted host with the reserved origin
+`https://markdown-preview.multica.invalid/` using `loadDataWithBaseURL`;
+that origin is never fetched. `WebViewCompat.addWebMessageListener` registers
+`MulticaPreviewBridge` only for that exact origin. The opaque-origin author
+frame receives no native interface. Native admission checks the main-frame
+flag, exact origin/scheme/port, a 2,048-byte UTF-8 limit, a 10-attempt/second
+window and the display-message shape before allocating an Expo/React Native
+event. The host also caps forwarded messages to 10/second and checks the child
+window; React revalidates and clamps display values. Unsupported Android
+WebViews disable JavaScript, install no legacy `addJavascriptInterface` and
+report a localized source fallback instead. These bounds protect the React
+Native event queue; they do not cap CPU/memory consumed inside the separate
+WebView renderer. Renderer termination still falls back to source.
+
+Mermaid's pinned published IIFE is embedded as a string by the mobile
+`postinstall` script. It runs exclusively in the sandbox, with strict security,
+SVG text labels, a 50,000-character limit and a 500-edge limit. Its generated
+module is ignored by Git and recreated on frozen/offline installs from the
+installed dependency. There are no CDN runtime requests or new native
+third-party native artifacts/config plugins. The local Android Expo module is
+autolinked at prebuild. Android release bundling embeds the IIFE in
+Hermes bytecode alongside the app. HTML is limited to 256,000 characters;
+oversize blocks show source. Errors, process termination and a 15-second
+startup timeout show a localized message, source and retry.
+
+The height bridge measures body contents instead of viewport-dependent body
+height and throttles observations through animation frames. Native accepts only
+finite heights, clamped to 72–360 dp. Taller/wider content is available in full
+screen. Mobile resolved palette tokens map to web embed CSS names including
+`--foreground`, `--surface`, `--background`, `--chart-1` through `--chart-5`
+and font tokens. Like web, token-using HTML opts into the app color scheme;
+hard-coded light documents retain their authored scheme.
+
+Vitest covers parsing (including spaces/tabs before rich languages), exact
+source preservation, bridge/navigation validation, theme mapping and headless
+shared-renderer/interaction wiring. Error selection follows the effective
+source mode, Preview retries, and a rich block owns one accessible copy action
+in inline/full-screen source and error states. Robolectric exercises the actual
+Android preview WebView with a recording message transport: another WebView's
+cookie survives preview mount/reload/disposal; cache clearing is never invoked;
+network/file/content requests, frame/origin, message size/rate and unsupported
+provider fallback are checked before any event callback. The transport double
+cannot establish real Chromium frame delivery or rendering behavior. Android's
+existing Robolectric width, math and gesture suites remain required.
+Browser checks of the actual sandbox document establish rendering and
+isolation only; they do not establish Fabric layout, native modal/selection
+behavior or physical Android/iOS gesture success.
 
 ### Known limitations and mitigations
 
@@ -191,7 +293,8 @@ The rendering routes remain:
 | Wide/narrow GFM tables and display math | Bounded native `OverflowHorizontalScrollView` with early Android touch arbitration |
 | Android inline math | Fitting bitmaps stay inline; oversized bitmaps become complete wrapping LaTeX source |
 | Top-level Markdown/HTML images | `expo-image` at body-relative width, with aspect ratio and lightbox preserved |
-| Embedded HTML | Preprocessing strips layout tags/attributes and retains text/images; comment bodies do not host WebViews |
+| Inline/bare HTML | Preprocessing strips layout tags/attributes and retains text/images |
+| Closed top-level HTML/Mermaid fences | Bounded isolated preview; tap for full-screen scrolling/interaction, or switch to guarded code source |
 
 `MarkdownWidthTest` uses API 32 Robolectric native graphics to check fractional
 and oversized-span measurements, actual `EnrichedMarkdownInternalText`
@@ -292,7 +395,7 @@ the arbiter nor its Yoga-managed code host measures or enlarges the viewport.
 After Android prebuild, run the API 32 Robolectric tests from `apps/mobile/android`:
 
 ```bash
-./gradlew :react-native-enriched-markdown:testDebugUnitTest :markdown-scroll-guard:compileDebugKotlin --no-daemon --max-workers=4
+./gradlew :markdown-preview:testDebugUnitTest :react-native-enriched-markdown:testDebugUnitTest :markdown-scroll-guard:compileDebugKotlin --no-daemon --max-workers=4
 ```
 
 `OverflowHorizontalScrollViewTest` dispatches complete finger event streams
@@ -440,8 +543,8 @@ React-tree renderer:
   *editor*, not the *renderer*)
 - A new library appears that satisfies path A + path B simultaneously
 - Expo SDK ships a first-party markdown renderer (currently doesn't)
-- The product team commits to LaTeX / Mermaid as core features — Expo
-  DOM Components becomes the right answer for that surface
+- The native WebView boundary or its interaction tradeoffs no longer meet
+  rich-preview requirements; reassess Expo DOM Components for that surface
 
 ---
 
