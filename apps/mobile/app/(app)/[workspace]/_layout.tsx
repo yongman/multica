@@ -14,6 +14,7 @@ import { useChatSessionsRealtime } from "@/data/realtime/use-chat-sessions-realt
 import { useProjectsRealtime } from "@/data/realtime/use-projects-realtime";
 import { usePinsRealtime } from "@/data/realtime/use-pins-realtime";
 import { usePresenceRealtime } from "@/data/realtime/use-presence-realtime";
+import { useSquadsRealtime } from "@/data/realtime/use-squads-realtime";
 import { useWorkspacePresencePrefetch } from "@/lib/use-workspace-presence-prefetch";
 import { ModalCloseButton } from "@/components/ui/modal-close-button";
 import { useNewIssueDraftResetOnWorkspaceChange } from "@/data/stores/new-issue-draft-store";
@@ -88,6 +89,7 @@ function RealtimeSubscriptions() {
   // the deliberately-skipped high-frequency events.
   useWorkspacePresencePrefetch();
   usePresenceRealtime();
+  useSquadsRealtime();
   return null;
 }
 
@@ -297,6 +299,14 @@ export default function WorkspaceLayout() {
         <Stack.Screen
           name="new-issue-picker/project"
           options={SHEET_OPTIONS}
+        />
+        <Stack.Screen
+          name="new-issue-picker/creator"
+          options={{
+            ...SHEET_OPTIONS,
+            headerShown: true,
+            title: t("issues:new.choose_creator"),
+          }}
         />
         <Stack.Screen
           name="new-issue-picker/due-date"

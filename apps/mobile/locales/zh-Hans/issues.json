@@ -80,14 +80,24 @@
     "agent_mode": "通过智能体创建",
     "project_unavailable": "此项目不可用。",
     "agent_prompt": "描述要创建任务的需求",
-    "selected_agent": "创建者：{{name}}",
+    "selected_agent": "智能体：{{name}}",
     "no_agents": "没有运行时可用的智能体。你可以手动创建任务。",
     "agents_load_failed": "无法加载智能体。",
     "agent_send": "发送给智能体",
     "agent_send_failed": "无法发送给智能体",
     "agent_upgrade": "请升级该智能体的运行时，或选择其他智能体。",
     "agent_sent": "请求已发送",
-    "agent_inbox": "请在收件箱查看结果。"
+    "agent_inbox": "请在收件箱查看结果。",
+    "choose_creator": "选择智能体或团队",
+    "search_creators": "搜索智能体和团队",
+    "selected_squad": "团队：{{name}}",
+    "no_creators": "暂无运行时可用且有调用权限的智能体或团队，可手动创建任务。",
+    "creators_load_failed": "无法加载智能体和团队。",
+    "creator_unavailable": "此智能体或团队已不可用，请重新选择。",
+    "creator_send_failed": "无法发送请求",
+    "squad_send": "发送给团队",
+    "squad_leader": "队长：{{name}}",
+    "squad_members_other": "{{count}} 位成员"
   },
   "edit": {
     "title": "编辑任务",
@@ -201,7 +211,10 @@
     "search_members_agents": "搜索成员或智能体",
     "search_people_issues": "搜索成员或任务",
     "reference_issue": "引用任务",
-    "clear": "清除"
+    "clear": "清除",
+    "no_access": "无调用权限",
+    "group_load_failed": "无法加载{{group}}。",
+    "retry_group": "重新加载{{group}}"
   },
   "comments": {
     "reply": "回复",

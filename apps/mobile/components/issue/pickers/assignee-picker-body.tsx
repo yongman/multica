@@ -13,7 +13,7 @@
  * it in as the `query` prop. This body is just a FlatList — no chrome.
  */
 import { useMemo } from "react";
-import { FlatList, Pressable, View } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
@@ -23,12 +23,17 @@ import type {
   MemberWithUser,
   Squad,
 } from "@multica/core/types";
+import { canAssignAgentToIssue } from "@multica/core/permissions/rules";
+import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { memberListOptions } from "@/data/queries/members";
 import { agentListOptions } from "@/data/queries/agents";
 import { squadListOptions } from "@/data/queries/squads";
+import { runtimeListOptions } from "@/data/queries/runtimes";
 import { useWorkspaceStore } from "@/data/workspace-store";
+import { useAuthStore } from "@/data/auth-store";
+import { getIssueCreators } from "@/lib/issue-creators";
 import { useScrollToTopOnChange } from "@/lib/use-scroll-to-top-on-change";
 import { THEME } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -46,15 +51,19 @@ interface Props {
   value: AssigneeValue;
   query: string;
   onChange: (next: AssigneeValue) => void;
+  /** Quick create excludes people/unassigned and requires an available runtime. */
+  mode?: "assign" | "quick-create";
 }
 
 type Row =
+  | { kind: "section"; group: "agents" | "squads" }
   | { kind: "unassigned" }
   | { kind: "member"; member: MemberWithUser }
   | { kind: "agent"; agent: Agent }
   | { kind: "squad"; squad: Squad };
 
 function isRowSelected(value: AssigneeValue, row: Row): boolean {
+  if (row.kind === "section") return false;
   if (row.kind === "unassigned") return value === null;
   if (value === null) return false;
   if (row.kind === "member")
@@ -64,12 +73,39 @@ function isRowSelected(value: AssigneeValue, row: Row): boolean {
   return value.type === "squad" && value.id === row.squad.id;
 }
 
-export function AssigneePickerBody({ value, query, onChange }: Props) {
+export function AssigneePickerBody({
+  value,
+  query,
+  onChange,
+  mode = "assign",
+}: Props) {
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
   const { t } = useT("issues");
-  const { data: members = [] } = useQuery(memberListOptions(wsId));
-  const { data: agents = [] } = useQuery(agentListOptions(wsId));
-  const { data: squads = [] } = useQuery(squadListOptions(wsId));
+  const membersQuery = useQuery(memberListOptions(wsId));
+  const agentsQuery = useQuery(agentListOptions(wsId));
+  const squadsQuery = useQuery(squadListOptions(wsId));
+  const quickCreate = mode === "quick-create";
+  const runtimesQuery = useQuery({
+    ...runtimeListOptions(wsId),
+    enabled: !!wsId && quickCreate,
+  });
+  const { data: members = [] } = membersQuery;
+  const { data: agents = [] } = agentsQuery;
+  const { data: squads = [] } = squadsQuery;
+  const role =
+    members.find((member) => member.user_id === userId)?.role ?? null;
+  const loadFailed =
+    membersQuery.isError ||
+    agentsQuery.isError ||
+    squadsQuery.isError ||
+    (quickCreate && runtimesQuery.isError);
+  const loading =
+    !membersQuery.data ||
+    !agentsQuery.data ||
+    !squadsQuery.data ||
+    (quickCreate && !runtimesQuery.data);
+  const runtimes = runtimesQuery.data;
   const runnableAgentIds = useMemo(
     () =>
       new Set(
@@ -92,19 +128,46 @@ export function AssigneePickerBody({ value, query, onChange }: Props) {
     const q = query.trim().toLowerCase();
     const matchName = (name: string) => !q || name.toLowerCase().includes(q);
 
-    const memberRows: Row[] = [...members]
+    const memberRows: Row[] = [...(membersQuery.isError ? [] : members)]
       .filter((m) => matchName(m.name))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((m) => ({ kind: "member" as const, member: m }));
-    const agentRows: Row[] = [...agents]
-      .filter((a) => matchName(a.name))
+    const available = getIssueCreators(
+      agents,
+      squads,
+      { userId, role },
+      runtimes ?? [],
+    );
+    const agentRows: Row[] = [
+      ...(agentsQuery.isError ? [] : quickCreate ? available.agents : agents),
+    ]
+      .filter((a) => !a.archived_at && matchName(a.name))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((a) => ({ kind: "agent" as const, agent: a }));
-    const squadRows: Row[] = [...squads]
+    const squadRows: Row[] = [
+      ...(squadsQuery.isError ? [] : quickCreate ? available.squads : squads),
+    ]
       .filter((s) => !s.archived_at && matchName(s.name))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((s) => ({ kind: "squad" as const, squad: s }));
 
+    if (quickCreate && (loadFailed || loading)) return [];
+    if (quickCreate) {
+      return [
+        ...(squadRows.length
+          ? [
+              { kind: "section" as const, group: "squads" as const },
+              ...squadRows,
+            ]
+          : []),
+        ...(agentRows.length
+          ? [
+              { kind: "section" as const, group: "agents" as const },
+              ...agentRows,
+            ]
+          : []),
+      ];
+    }
     if (q) return [...memberRows, ...agentRows, ...squadRows];
 
     // Pin the currently-selected actor right below Unassigned and remove it
@@ -121,11 +184,27 @@ export function AssigneePickerBody({ value, query, onChange }: Props) {
       ...agentRows.filter((r) => !isRowSelected(value, r)),
       ...squadRows.filter((r) => !isRowSelected(value, r)),
     ];
-  }, [members, agents, squads, query, value]);
+  }, [
+    members,
+    agents,
+    squads,
+    query,
+    value,
+    quickCreate,
+    userId,
+    role,
+    loadFailed,
+    loading,
+    runtimes,
+    membersQuery.isError,
+    agentsQuery.isError,
+    squadsQuery.isError,
+  ]);
 
   const isSelected = (row: Row) => isRowSelected(value, row);
 
   const select = (row: Row) => {
+    if (row.kind === "section") return;
     if (row.kind === "unassigned") onChange(null);
     else if (row.kind === "member")
       onChange({ type: "member", id: row.member.user_id });
@@ -147,81 +226,191 @@ export function AssigneePickerBody({ value, query, onChange }: Props) {
       automaticallyAdjustKeyboardInsets
       contentInsetAdjustmentBehavior="automatic"
       keyExtractor={(row) => {
+        if (row.kind === "section") return `section:${row.group}`;
         if (row.kind === "unassigned") return "unassigned";
         if (row.kind === "member") return `m:${row.member.user_id}`;
         if (row.kind === "agent") return `a:${row.agent.id}`;
         return `s:${row.squad.id}`;
       }}
       renderItem={({ item }) => {
+        if (item.kind === "section") {
+          return (
+            <View className="px-4 pt-4 pb-2">
+              <Text
+                accessibilityRole="header"
+                className="text-sm font-semibold text-muted-foreground"
+              >
+                {t(item.group === "squads" ? "picker.squads" : "picker.agents")}
+              </Text>
+            </View>
+          );
+        }
         const needsRuntime =
           (item.kind === "agent" && !isAgentRuntimeBound(item.agent)) ||
           (item.kind === "squad" &&
             !runnableAgentIds.has(item.squad.leader_id));
+        const agent =
+          item.kind === "agent"
+            ? item.agent
+            : item.kind === "squad"
+              ? agents.find(
+                  (candidate) => candidate.id === item.squad.leader_id,
+                )
+              : null;
+        const noPermission = agent
+          ? !canAssignAgentToIssue(agent, { userId, role }).allowed
+          : item.kind === "squad";
+        const disabled = needsRuntime || noPermission;
         return (
           <Pressable
-          disabled={needsRuntime}
-          onPress={() => select(item)}
-          className={cn(
-            "flex-row items-center gap-3 px-4 py-3 active:bg-secondary",
-            needsRuntime && "opacity-50",
-          )}
-        >
-          {item.kind === "unassigned" ? (
-            <View
-              className="rounded-full border border-dashed border-muted-foreground/40 items-center justify-center"
-              style={{ width: AVATAR_SIZE, height: AVATAR_SIZE }}
-            >
-              <Text className="text-sm text-muted-foreground">∅</Text>
+            accessibilityRole="button"
+            accessibilityState={{ selected: isSelected(item), disabled }}
+            disabled={disabled}
+            onPress={() => select(item)}
+            className={cn(
+              "flex-row items-center gap-3 px-4 py-3 active:bg-secondary",
+              disabled && "opacity-50",
+            )}
+          >
+            {item.kind === "unassigned" ? (
+              <View
+                className="rounded-full border border-dashed border-muted-foreground/40 items-center justify-center"
+                style={{ width: AVATAR_SIZE, height: AVATAR_SIZE }}
+              >
+                <Text className="text-sm text-muted-foreground">∅</Text>
+              </View>
+            ) : item.kind === "member" ? (
+              <ActorAvatar
+                type="member"
+                id={item.member.user_id}
+                size={AVATAR_SIZE}
+              />
+            ) : item.kind === "agent" ? (
+              <ActorAvatar type="agent" id={item.agent.id} size={AVATAR_SIZE} />
+            ) : (
+              <ActorAvatar type="squad" id={item.squad.id} size={AVATAR_SIZE} />
+            )}
+            <View className="flex-1">
+              <Text className="text-base text-foreground" numberOfLines={2}>
+                {item.kind === "unassigned"
+                  ? t("picker.unassigned")
+                  : item.kind === "member"
+                    ? item.member.name
+                    : item.kind === "agent"
+                      ? item.agent.name
+                      : item.squad.name}
+              </Text>
+              {quickCreate && item.kind === "squad" && agent ? (
+                <Text
+                  className="text-xs text-muted-foreground"
+                  numberOfLines={2}
+                >
+                  {t("new.squad_leader", { name: agent.name })}
+                  {item.squad.member_count != null
+                    ? ` · ${t("new.squad_members", { count: item.squad.member_count })}`
+                    : ""}
+                </Text>
+              ) : null}
             </View>
-          ) : item.kind === "member" ? (
-            <ActorAvatar
-              type="member"
-              id={item.member.user_id}
-              size={AVATAR_SIZE}
-            />
-          ) : item.kind === "agent" ? (
-            <ActorAvatar type="agent" id={item.agent.id} size={AVATAR_SIZE} />
-          ) : (
-            <ActorAvatar type="squad" id={item.squad.id} size={AVATAR_SIZE} />
-          )}
-          <Text className="flex-1 text-base text-foreground">
-            {item.kind === "unassigned"
-              ? t("picker.unassigned")
-              : item.kind === "member"
-                ? item.member.name
-                : item.kind === "agent"
-                  ? item.agent.name
-                  : item.squad.name}
-          </Text>
-          {/* Right-aligned secondary label. Mirrors Apple's
+            {/* Right-aligned secondary label. Mirrors Apple's
               UITableViewCellStyleValue1 / UIListContentConfiguration.valueCell
               pattern used throughout iOS Settings — type tag in lighter font on
               the same row. Members carry no tag (they're the default actor). */}
-          {item.kind === "agent" ? (
-            <Text className="text-sm text-muted-foreground">
-              {isAgentRuntimeBound(item.agent)
-                ? t("picker.agent")
-                : t("picker.needs_runtime")}
-            </Text>
-          ) : item.kind === "squad" ? (
-            <Text className="text-sm text-muted-foreground">
-              {needsRuntime
-                ? t("picker.leader_needs_runtime")
-                : t("picker.squad")}
-            </Text>
-          ) : null}
-          {isSelected(item) ? (
-            <Ionicons name="checkmark" size={20} color={checkColor} />
-          ) : null}
+            <View className="max-w-[40%] items-end gap-1">
+              {item.kind === "agent" ? (
+                <Text
+                  className="text-sm text-muted-foreground"
+                  numberOfLines={2}
+                >
+                  {noPermission
+                    ? t("picker.no_access")
+                    : isAgentRuntimeBound(item.agent)
+                      ? t("picker.agent")
+                      : t("picker.needs_runtime")}
+                </Text>
+              ) : item.kind === "squad" ? (
+                <Text
+                  className="text-sm text-muted-foreground"
+                  numberOfLines={2}
+                >
+                  {noPermission
+                    ? t("picker.no_access")
+                    : needsRuntime
+                      ? t("picker.leader_needs_runtime")
+                      : t("picker.squad")}
+                </Text>
+              ) : null}
+              {isSelected(item) ? (
+                <Ionicons name="checkmark" size={20} color={checkColor} />
+              ) : null}
+            </View>
           </Pressable>
         );
       }}
       ListEmptyComponent={
-        <View className="px-3 py-8 items-center">
-          <Text className="text-sm text-muted-foreground">
-            {t("picker.no_matches")}
-          </Text>
+        <View className="px-4 py-8 items-center gap-3">
+          {quickCreate && loadFailed ? (
+            <>
+              <Text className="text-sm text-destructive">
+                {t("new.creators_load_failed")}
+              </Text>
+              <Button
+                variant="outline"
+                onPress={() => {
+                  void membersQuery.refetch();
+                  void agentsQuery.refetch();
+                  void squadsQuery.refetch();
+                  void runtimesQuery.refetch();
+                }}
+              >
+                <Text>{t("common:actions.retry")}</Text>
+              </Button>
+            </>
+          ) : loading && quickCreate ? (
+            <ActivityIndicator />
+          ) : (
+            <Text className="text-sm text-muted-foreground">
+              {t(
+                quickCreate && !query.trim()
+                  ? "new.no_creators"
+                  : "picker.no_matches",
+              )}
+            </Text>
+          )}
         </View>
+      }
+      ListFooterComponent={
+        !quickCreate ? (
+          <View className="gap-3 px-4 pb-4">
+            {[
+              { label: t("picker.people"), query: membersQuery },
+              { label: t("picker.agents"), query: agentsQuery },
+              { label: t("picker.squads"), query: squadsQuery },
+            ].map(({ label, query: group }) =>
+              group.isError ? (
+                <View key={label} className="gap-2">
+                  <Text className="text-sm text-destructive">
+                    {t("picker.group_load_failed", { group: label })}
+                  </Text>
+                  <Button
+                    variant="outline"
+                    className="self-start"
+                    onPress={() => {
+                      void group.refetch();
+                    }}
+                  >
+                    <Text>{t("picker.retry_group", { group: label })}</Text>
+                  </Button>
+                </View>
+              ) : !group.data ? (
+                <View key={label} className="flex-row items-center gap-2">
+                  <ActivityIndicator />
+                  <Text className="text-sm text-muted-foreground">{label}</Text>
+                </View>
+              ) : null,
+            )}
+          </View>
+        ) : null
       }
     />
   );

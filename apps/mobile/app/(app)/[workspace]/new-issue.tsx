@@ -1,10 +1,9 @@
 /**
  * New issue creation modal.
  *
- * Layout follows Apple Reminders / Linear iOS / Things 3: one vertical
- * scrolling form (title → description → property chips), no sticky bottom
- * toolbar. Property chips are part of the form, not pinned above keyboard.
- * MentionSuggestionBar floats above keyboard only when the user is mid-@.
+ * One scrolling form above a bottom mode switch. Property chips stay in
+ * the form. Mention suggestions sit above the switch in the same keyboard-
+ * avoiding container, so neither surface can overlap the other.
  *
  * No markdown toolbar / upload buttons in v1: mobile users creating an
  * issue rarely format markdown, and attachment upload is deferred to a
@@ -25,11 +24,17 @@ import {
   View,
 } from "react-native";
 import { KeyboardAvoidingView } from "@/components/ui/keyboard-avoiding-view";
-import { Stack, router, useLocalSearchParams, useNavigation } from "expo-router";
+import {
+  Stack,
+  router,
+  useLocalSearchParams,
+  useNavigation,
+} from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useKeyboardState } from "react-native-keyboard-controller";
 import { useQuery } from "@tanstack/react-query";
 import type { Project } from "@multica/core/types";
-import { canAssignAgentToIssue } from "@multica/core/permissions/rules";
-import { AgentPickerSheet } from "@/components/chat/agent-picker-sheet";
+import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { SubmitIssueButton } from "@/components/issue/submit-issue-button";
 import {
   CreateFormAttributeRow,
@@ -45,12 +50,22 @@ import { useAuthStore } from "@/data/auth-store";
 import { useCreateIssue, useQuickCreateIssue } from "@/data/mutations/issues";
 import { agentListOptions } from "@/data/queries/agents";
 import { memberListOptions } from "@/data/queries/members";
-import { findProject, projectDetailOptions, projectListOptions } from "@/data/queries/projects";
+import { squadListOptions } from "@/data/queries/squads";
+import { runtimeListOptions } from "@/data/queries/runtimes";
+import {
+  findProject,
+  projectDetailOptions,
+  projectListOptions,
+} from "@/data/queries/projects";
 import { currentSessionEpoch, sessionEpochChanged } from "@/data/session-epoch";
 import { useNewIssueDraftStore } from "@/data/stores/new-issue-draft-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
-import { isAgentRuntimeBound } from "@/lib/is-agent-runtime-bound";
+import {
+  buildQuickCreateRequest,
+  getIssueCreators,
+} from "@/lib/issue-creators";
 import { useMentionInput } from "@/lib/use-mention-input";
+import { newIssueMentionMaxHeight } from "@/lib/new-issue-layout";
 import { useT } from "@/lib/i18n";
 
 export default function NewIssueModal() {
@@ -88,7 +103,9 @@ export default function NewIssueModal() {
 
   return (
     <View className="flex-1 items-center justify-center gap-3 bg-background px-4">
-      <Text className="text-sm text-muted-foreground">{t("new.project_unavailable")}</Text>
+      <Text className="text-sm text-muted-foreground">
+        {t("new.project_unavailable")}
+      </Text>
       {source.isError && (
         <Button variant="outline" onPress={() => source.refetch()}>
           <Text>{t("common:actions.retry")}</Text>
@@ -101,11 +118,13 @@ export default function NewIssueModal() {
 function NewIssueForm({ initialProject }: { initialProject: Project | null }) {
   const { t } = useT("issues");
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const [agentMode, setAgentMode] = useState(false);
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [agentId, setAgentId] = useState<string | null>(null);
-  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const [contentHeight, setContentHeight] = useState(0);
+  const [footerHeight, setFooterHeight] = useState(0);
   const submitting = useRef(false);
   const description = useMentionInput();
   // Attribute chips (status / priority / assignee / due date / project)
@@ -118,6 +137,7 @@ function NewIssueForm({ initialProject }: { initialProject: Project | null }) {
   const assignee = useNewIssueDraftStore((s) => s.assignee);
   const dueDate = useNewIssueDraftStore((s) => s.dueDate);
   const project = useNewIssueDraftStore((s) => s.project);
+  const creator = useNewIssueDraftStore((s) => s.creator);
   const resetDraft = useNewIssueDraftStore((s) => s.reset);
 
   useEffect(() => {
@@ -131,33 +151,56 @@ function NewIssueForm({ initialProject }: { initialProject: Project | null }) {
   const quickCreate = useQuickCreateIssue();
   const isSubmitting = createIssue.isPending || quickCreate.isPending;
   const wsId = useWorkspaceStore((state) => state.currentWorkspaceId);
+  const wsSlug = useWorkspaceStore((state) => state.currentWorkspaceSlug);
   const projectId = project?.id ?? null;
   const { data: projects } = useQuery({
     ...projectListOptions(wsId),
     enabled: !!wsId && !!projectId,
   });
   const selectedProject = projects ? findProject(projects, projectId) : project;
-  const projectUnavailable = !!projectId && (!selectedProject || !!selectedProject.archived_at);
+  const projectUnavailable =
+    !!projectId && (!selectedProject || !!selectedProject.archived_at);
   const userId = useAuthStore((state) => state.user?.id ?? null);
-  const agents = useQuery({ ...agentListOptions(wsId), enabled: !!wsId && agentMode });
-  const members = useQuery({ ...memberListOptions(wsId), enabled: !!wsId && agentMode });
-  const role = members.data?.find((member) => member.user_id === userId)?.role ?? null;
-  const availableAgents = (agents.data ?? []).filter(
-    (agent) =>
-      !agent.archived_at &&
-      isAgentRuntimeBound(agent) &&
-      agent.runtime_availability !== "offline" &&
-      canAssignAgentToIssue(agent, { userId, role }).allowed,
+  const agents = useQuery({
+    ...agentListOptions(wsId),
+    enabled: !!wsId && agentMode,
+  });
+  const members = useQuery({
+    ...memberListOptions(wsId),
+    enabled: !!wsId && agentMode,
+  });
+  const squads = useQuery({
+    ...squadListOptions(wsId),
+    enabled: !!wsId && agentMode,
+  });
+  const runtimes = useQuery({
+    ...runtimeListOptions(wsId),
+    enabled: !!wsId && agentMode,
+  });
+  const role =
+    members.data?.find((member) => member.user_id === userId)?.role ?? null;
+  const available = getIssueCreators(
+    agents.data ?? [],
+    squads.data ?? [],
+    { userId, role },
+    runtimes.data ?? [],
   );
-  const selectedAgent = availableAgents.find((agent) => agent.id === agentId);
-  const agentListFailed = agents.isError || members.isError;
-  const waitingForAgents = !agents.data || !members.data;
-  const trimmedPrompt = prompt.trim();
+  const selectedCreator =
+    creator?.type === "squad"
+      ? available.squads.find((squad) => squad.id === creator.id)
+      : available.agents.find((agent) => agent.id === creator?.id);
+  const creatorListFailed =
+    agents.isError || members.isError || squads.isError || runtimes.isError;
+  const waitingForCreators =
+    !agents.data || !members.data || !squads.data || !runtimes.data;
   const agentRequest =
-    agentMode && selectedAgent && trimmedPrompt && !agentListFailed && !waitingForAgents
-      ? { prompt: trimmedPrompt, agent_id: selectedAgent.id, project_id: projectId ?? undefined }
+    agentMode && !creatorListFailed && !waitingForCreators
+      ? buildQuickCreateRequest(creator, prompt, available, projectId)
       : null;
-  const canSubmit = !isSubmitting && !projectUnavailable && (agentMode ? !!agentRequest : !!title.trim());
+  const canSubmit =
+    !isSubmitting &&
+    !projectUnavailable &&
+    (agentMode ? !!agentRequest : !!title.trim());
 
   async function onSubmit() {
     if (!canSubmit || submitting.current) return;
@@ -186,18 +229,30 @@ function NewIssueForm({ initialProject }: { initialProject: Project | null }) {
     } catch (err) {
       submitting.current = false;
       if (sessionEpochChanged(epoch) || !navigation.isFocused()) return;
-      let message = err instanceof Error ? err.message : t("common:states.error");
-      if (agentMode && err instanceof ApiError && err.body && typeof err.body === "object") {
-        if ("code" in err.body && err.body.code === "daemon_version_unsupported") {
+      let message =
+        err instanceof Error ? err.message : t("common:states.error");
+      if (
+        agentMode &&
+        err instanceof ApiError &&
+        err.body &&
+        typeof err.body === "object"
+      ) {
+        if (
+          "code" in err.body &&
+          err.body.code === "daemon_version_unsupported"
+        ) {
           message = t("new.agent_upgrade");
-        } else if ("reason" in err.body && typeof err.body.reason === "string") {
+        } else if (
+          "reason" in err.body &&
+          typeof err.body.reason === "string"
+        ) {
           message = err.body.reason;
         } else if ("error" in err.body && typeof err.body.error === "string") {
           message = err.body.error;
         }
       }
       Alert.alert(
-        agentMode ? t("new.agent_send_failed") : t("errors.create_failed"),
+        agentMode ? t("new.creator_send_failed") : t("errors.create_failed"),
         message,
       );
     }
@@ -208,7 +263,11 @@ function NewIssueForm({ initialProject }: { initialProject: Project | null }) {
       disabled={!canSubmit}
       loading={isSubmitting}
       onPress={onSubmit}
-      accessibilityLabel={agentMode ? t("new.agent_send") : undefined}
+      accessibilityLabel={
+        agentMode
+          ? t(creator?.type === "squad" ? "new.squad_send" : "new.agent_send")
+          : undefined
+      }
     />
   );
 
@@ -219,104 +278,175 @@ function NewIssueForm({ initialProject }: { initialProject: Project | null }) {
         className="flex-1 bg-background"
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="px-4 pt-4 pb-6 gap-4"
-          keyboardShouldPersistTaps="handled"
+        {/* Measure the space after keyboard avoidance, not the full screen. */}
+        <View
+          className="flex-1 min-h-0"
+          onLayout={(event) =>
+            setContentHeight(event.nativeEvent.layout.height)
+          }
         >
-          <Button
-            variant="outline"
-            size="sm"
-            className="self-start"
-            disabled={isSubmitting}
-            onPress={() => setAgentMode(!agentMode)}
+          <ScrollView
+            className="flex-1 min-h-0"
+            contentContainerClassName="px-4 pt-4 pb-6 gap-4"
+            keyboardShouldPersistTaps="handled"
           >
-            <Text>{agentMode ? t("new.manual_mode") : t("new.agent_mode")}</Text>
-          </Button>
-          {agentMode ? (
-            <>
-              <TextInput
-                value={prompt}
-                onChangeText={setPrompt}
-                accessibilityLabel={t("new.agent_prompt")}
-                placeholder={t("new.agent_prompt")}
-                placeholderTextColor={MOBILE_PLACEHOLDER_COLOR}
-                className="min-h-28 py-2 text-base text-foreground"
-                multiline
-                textAlignVertical="top"
-                editable={!isSubmitting}
-              />
-              {agentListFailed ? (
-                <View className="gap-2">
-                  <Text className="text-sm text-destructive">{t("new.agents_load_failed")}</Text>
-                  <Button
-                    variant="outline"
-                    className="self-start"
-                    onPress={() => { void agents.refetch(); void members.refetch(); }}
-                  >
-                    <Text>{t("common:actions.retry")}</Text>
-                  </Button>
-                </View>
-              ) : waitingForAgents ? (
-                <ActivityIndicator />
-              ) : availableAgents.length === 0 ? (
-                <Text className="text-sm text-muted-foreground">{t("new.no_agents")}</Text>
-              ) : (
-                <Button
-                  variant="outline"
-                  className="self-start max-w-full"
-                  disabled={isSubmitting}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    setAgentPickerOpen(true);
-                  }}
-                >
-                  <Text numberOfLines={1}>
-                    {selectedAgent
-                      ? t("new.selected_agent", { name: selectedAgent.name })
-                      : t("chat:picker.title")}
-                  </Text>
-                </Button>
-              )}
-              <CreateFormProjectChip disabled={isSubmitting} />
-              {agentPickerOpen && (
-                <AgentPickerSheet
-                  visible
-                  agents={availableAgents}
-                  currentAgentId={agentId}
-                  onPick={(agent) => setAgentId(agent.id)}
-                  onClose={() => setAgentPickerOpen(false)}
+            {agentMode ? (
+              <>
+                <TextInput
+                  value={prompt}
+                  onChangeText={setPrompt}
+                  accessibilityLabel={t("new.agent_prompt")}
+                  placeholder={t("new.agent_prompt")}
+                  placeholderTextColor={MOBILE_PLACEHOLDER_COLOR}
+                  className="min-h-28 py-2 text-base text-foreground"
+                  multiline
+                  textAlignVertical="top"
+                  editable={!isSubmitting}
                 />
-              )}
-            </>
-          ) : (
-            <>
-              <TextInput
-                value={title}
-                onChangeText={setTitle}
-                placeholder={t("new.title_placeholder")}
-                placeholderTextColor={MOBILE_PLACEHOLDER_COLOR}
-                className="text-2xl font-semibold text-foreground py-2"
-                autoFocus
-                returnKeyType="next"
-                editable={!isSubmitting}
-              />
-              <DescriptionField
-                description={description}
-                disabled={isSubmitting}
-              />
-              <CreateFormAttributeRow />
-            </>
-          )}
-          {projectUnavailable && (
-            <Text className="text-sm text-destructive">{t("new.project_unavailable")}</Text>
-          )}
-        </ScrollView>
+                {creatorListFailed ? (
+                  <View className="gap-2">
+                    <Text className="text-sm text-destructive">
+                      {t("new.creators_load_failed")}
+                    </Text>
+                    <Button
+                      variant="outline"
+                      className="self-start"
+                      onPress={() => {
+                        void agents.refetch();
+                        void members.refetch();
+                        void squads.refetch();
+                        void runtimes.refetch();
+                      }}
+                    >
+                      <Text>{t("common:actions.retry")}</Text>
+                    </Button>
+                  </View>
+                ) : waitingForCreators ? (
+                  <ActivityIndicator />
+                ) : (
+                  <>
+                    <Button
+                      variant="outline"
+                      className="self-start max-w-full"
+                      disabled={isSubmitting || !wsSlug}
+                      onPress={() => {
+                        if (!wsSlug) return;
+                        Keyboard.dismiss();
+                        router.push({
+                          pathname: "/[workspace]/new-issue-picker/creator",
+                          params: { workspace: wsSlug },
+                        });
+                      }}
+                    >
+                      {selectedCreator && creator && (
+                        <ActorAvatar
+                          type={creator.type}
+                          id={creator.id}
+                          size={20}
+                        />
+                      )}
+                      <Text className="shrink" numberOfLines={1}>
+                        {selectedCreator
+                          ? t(
+                              creator?.type === "squad"
+                                ? "new.selected_squad"
+                                : "new.selected_agent",
+                              {
+                                name: selectedCreator.name,
+                              },
+                            )
+                          : t("new.choose_creator")}
+                      </Text>
+                    </Button>
+                    {creator && !selectedCreator ? (
+                      <Text className="text-sm text-destructive">
+                        {t("new.creator_unavailable")}
+                      </Text>
+                    ) : null}
+                    {available.agents.length === 0 &&
+                    available.squads.length === 0 ? (
+                      <Text className="text-sm text-muted-foreground">
+                        {t("new.no_creators")}
+                      </Text>
+                    ) : null}
+                  </>
+                )}
+                <CreateFormProjectChip disabled={isSubmitting} />
+              </>
+            ) : (
+              <>
+                <TextInput
+                  value={title}
+                  onChangeText={setTitle}
+                  placeholder={t("new.title_placeholder")}
+                  placeholderTextColor={MOBILE_PLACEHOLDER_COLOR}
+                  className="text-2xl font-semibold text-foreground py-2"
+                  accessibilityLabel={t("new.title_placeholder")}
+                  autoFocus
+                  returnKeyType="next"
+                  editable={!isSubmitting}
+                />
+                <DescriptionField
+                  description={description}
+                  disabled={isSubmitting}
+                />
+                <CreateFormAttributeRow />
+              </>
+            )}
+            {projectUnavailable && (
+              <Text className="text-sm text-destructive">
+                {t("new.project_unavailable")}
+              </Text>
+            )}
+          </ScrollView>
 
-        {/* Mention suggestions float above the keyboard only when the user
-            types `@`. Self-hides via `if (!visible) return null` so it
-            doesn't take space at rest. */}
-        {!agentMode && <MentionSuggestionBar {...description.suggestionBar} />}
+          {/* Normal layout keeps suggestions, modes and the keyboard separate. */}
+          {!agentMode && (
+            <MentionSuggestionBar
+              {...description.suggestionBar}
+              maxHeight={newIssueMentionMaxHeight(contentHeight, footerHeight)}
+            />
+          )}
+          <View
+            role="tablist"
+            onLayout={(event) =>
+              setFooterHeight(event.nativeEvent.layout.height)
+            }
+            className="shrink-0 flex-row gap-2 border-t border-border bg-background px-4 pt-3"
+            style={{
+              paddingBottom: keyboardVisible ? 12 : Math.max(insets.bottom, 12),
+            }}
+          >
+            <Button
+              role="tab"
+              aria-selected={!agentMode}
+              className="flex-1 h-auto min-h-11 py-3"
+              variant={agentMode ? "outline" : "default"}
+              disabled={isSubmitting}
+              accessibilityState={{
+                selected: !agentMode,
+                disabled: isSubmitting,
+              }}
+              onPress={() => setAgentMode(false)}
+            >
+              <Text className="shrink text-center">{t("new.manual_mode")}</Text>
+            </Button>
+            <Button
+              role="tab"
+              aria-selected={agentMode}
+              className="flex-1 h-auto min-h-11 py-3"
+              variant={agentMode ? "default" : "outline"}
+              disabled={isSubmitting}
+              accessibilityState={{
+                selected: agentMode,
+                disabled: isSubmitting,
+              }}
+              onPress={() => setAgentMode(true)}
+            >
+              <Text className="shrink text-center">{t("new.agent_mode")}</Text>
+            </Button>
+          </View>
+        </View>
       </KeyboardAvoidingView>
     </>
   );

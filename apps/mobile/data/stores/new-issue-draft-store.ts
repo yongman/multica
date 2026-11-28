@@ -28,6 +28,7 @@ import type {
   Project,
 } from "@multica/core/types";
 import type { AssigneeValue } from "@/components/issue/pickers/assignee-picker-body";
+import type { IssueCreator } from "@/lib/issue-creators";
 
 interface NewIssueDraftState {
   status: IssueStatus;
@@ -35,23 +36,26 @@ interface NewIssueDraftState {
   assignee: AssigneeValue;
   dueDate: string | null;
   project: Project | null;
+  creator: IssueCreator | null;
   setStatus: (next: IssueStatus) => void;
   setPriority: (next: IssuePriority) => void;
   setAssignee: (next: AssigneeValue) => void;
   setDueDate: (next: string | null) => void;
   setProject: (next: Project | null) => void;
+  setCreator: (next: IssueCreator) => void;
   reset: (project?: Project | null) => void;
 }
 
 const INITIAL: Pick<
   NewIssueDraftState,
-  "status" | "priority" | "assignee" | "dueDate" | "project"
+  "status" | "priority" | "assignee" | "dueDate" | "project" | "creator"
 > = {
   status: "todo",
   priority: "none",
   assignee: null,
   dueDate: null,
   project: null,
+  creator: null,
 };
 
 export const useNewIssueDraftStore = create<NewIssueDraftState>((set) => ({
@@ -61,6 +65,7 @@ export const useNewIssueDraftStore = create<NewIssueDraftState>((set) => ({
   setAssignee: (next) => set({ assignee: next }),
   setDueDate: (next) => set({ dueDate: next }),
   setProject: (next) => set({ project: next }),
+  setCreator: (next) => set({ creator: next }),
   reset: (project = null) => set({ ...INITIAL, project }),
 }));
 
