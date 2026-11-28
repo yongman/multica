@@ -36,6 +36,7 @@ export default defineConfig({
       "components/inbox/inbox-row.test.ts",
       "components/issue/timeline-list.test.ts",
       "components/issue/comment-card.test.ts",
+      "components/issue/pickers/assignee-picker-body.test.ts",
       "components/composer/message-composer.test.ts",
     ],
     passWithNoTests: true,

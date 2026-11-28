@@ -3,12 +3,38 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseWithFallback } from "@/lib/parse-response";
 import {
   ProjectSchema,
+  AgentSchema,
+  SquadSchema,
   EMPTY_TASK_MESSAGE_LIST,
   TaskMessageListSchema,
 } from "./schemas";
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("creator compatibility", () => {
+  it.each(["online", "unstable", "offline"])("keeps runtime availability %s", (runtime_availability) => {
+    expect(AgentSchema.parse({ id: "agent", runtime_availability }).runtime_availability)
+      .toBe(runtime_availability);
+  });
+
+  it.each([undefined, null, "future-state", 42])("tolerates missing or unknown availability %j", (runtime_availability) => {
+    expect(AgentSchema.parse({ id: "agent", runtime_availability }).runtime_availability)
+      .toBeUndefined();
+  });
+
+  it.each([undefined, null, "3", -1, 1.5])("does not display malformed squad member counts: %j", (member_count) => {
+    const parsed = SquadSchema.parse({ id: "squad", member_count });
+    expect(parsed.id).toBe("squad");
+    expect(parsed.member_count).toBeUndefined();
+  });
+
+  it("preserves zero and positive member counts", () => {
+    for (const member_count of [0, 3]) {
+      expect(SquadSchema.parse({ id: "squad", member_count }).member_count).toBe(member_count);
+    }
+  });
 });
 
 describe("project creator compatibility", () => {

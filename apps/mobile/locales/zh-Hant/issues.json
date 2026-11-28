@@ -80,14 +80,24 @@
     "agent_mode": "透過 AI 代理建立",
     "project_unavailable": "此專案無法使用。",
     "agent_prompt": "描述要建立任務的需求",
-    "selected_agent": "建立者：{{name}}",
+    "selected_agent": "AI 代理：{{name}}",
     "no_agents": "沒有執行環境可用的 AI 代理。你可以手動建立任務。",
     "agents_load_failed": "無法載入 AI 代理。",
     "agent_send": "傳送給 AI 代理",
     "agent_send_failed": "無法傳送給 AI 代理",
     "agent_upgrade": "請更新該 AI 代理的執行環境，或選擇其他 AI 代理。",
     "agent_sent": "請求已傳送",
-    "agent_inbox": "請在收件匣查看結果。"
+    "agent_inbox": "請在收件匣查看結果。",
+    "choose_creator": "選擇 AI 代理或團隊",
+    "search_creators": "搜尋 AI 代理和團隊",
+    "selected_squad": "團隊：{{name}}",
+    "no_creators": "暫無執行環境可用且有呼叫權限的 AI 代理或團隊，可手動建立任務。",
+    "creators_load_failed": "無法載入 AI 代理和團隊。",
+    "creator_unavailable": "此 AI 代理或團隊已無法使用，請重新選擇。",
+    "creator_send_failed": "無法傳送請求",
+    "squad_send": "傳送給團隊",
+    "squad_leader": "隊長：{{name}}",
+    "squad_members_other": "{{count}} 位成員"
   },
   "edit": {
     "title": "編輯任務",
@@ -201,7 +211,8 @@
     "search_members_agents": "搜尋成員或 AI 代理",
     "search_people_issues": "搜尋成員或任務",
     "reference_issue": "引用任務",
-    "clear": "清除"
+    "clear": "清除",
+    "no_access": "無呼叫權限"
   },
   "comments": {
     "reply": "回覆",

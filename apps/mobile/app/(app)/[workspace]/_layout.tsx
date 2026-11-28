@@ -299,6 +299,14 @@ export default function WorkspaceLayout() {
           options={SHEET_OPTIONS}
         />
         <Stack.Screen
+          name="new-issue-picker/creator"
+          options={{
+            ...SHEET_OPTIONS,
+            headerShown: true,
+            title: t("issues:new.choose_creator"),
+          }}
+        />
+        <Stack.Screen
           name="new-issue-picker/due-date"
           options={SHEET_OPTIONS}
         />

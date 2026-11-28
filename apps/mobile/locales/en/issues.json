@@ -80,14 +80,25 @@
     "agent_mode": "Create with agent",
     "project_unavailable": "This project is unavailable.",
     "agent_prompt": "Describe the work to create an issue for",
-    "selected_agent": "Created by: {{name}}",
+    "selected_agent": "Agent: {{name}}",
     "no_agents": "No agents with an available runtime. You can create the issue manually.",
     "agents_load_failed": "Couldn’t load agents.",
     "agent_send": "Send to agent",
     "agent_send_failed": "Couldn’t send to agent",
     "agent_upgrade": "Update the agent’s runtime or choose another agent.",
     "agent_sent": "Request sent",
-    "agent_inbox": "Check your inbox for the result."
+    "agent_inbox": "Check your inbox for the result.",
+    "choose_creator": "Choose agent or squad",
+    "search_creators": "Search agents and squads",
+    "selected_squad": "Squad: {{name}}",
+    "no_creators": "No agents or squads with an available runtime and permission to run. You can create the issue manually.",
+    "creators_load_failed": "Couldn’t load agents and squads.",
+    "creator_unavailable": "This agent or squad is no longer available. Choose another.",
+    "creator_send_failed": "Couldn’t send request",
+    "squad_send": "Send to squad",
+    "squad_leader": "Leader: {{name}}",
+    "squad_members_one": "{{count}} member",
+    "squad_members_other": "{{count}} members"
   },
   "edit": {
     "title": "Edit issue",
@@ -203,7 +214,8 @@
     "search_members_agents": "Search members or agents",
     "search_people_issues": "Search people or issues",
     "reference_issue": "Reference an issue",
-    "clear": "Clear"
+    "clear": "Clear",
+    "no_access": "No permission to run"
   },
   "comments": {
     "reply": "Reply",

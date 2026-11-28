@@ -174,7 +174,13 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024;
  *  reasonable Multica payload size on cellular. */
 const FETCH_TIMEOUT_MS = 30_000;
 
-export type QuickCreateIssueRequest = { agent_id: string; prompt: string; project_id?: string };
+export type QuickCreateIssueRequest = {
+  prompt: string;
+  project_id?: string;
+} & (
+  | { agent_id: string; squad_id?: never }
+  | { squad_id: string; agent_id?: never }
+);
 
 export class ApiError extends Error {
   readonly status: number;

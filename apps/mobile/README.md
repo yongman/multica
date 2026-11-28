@@ -12,6 +12,16 @@ Pinned opens the pinned issues and projects list with the tab bar still visible.
 My Issues is hidden from the bar. More contains account settings, the workspace
 switcher and another entry to the same pinned items.
 
+New issue keeps **Create manually** and **Create with agent** at the bottom of
+the form, above the system safe area or keyboard. Switching modes preserves
+both inputs and the shared project. Agent mode's searchable picker groups
+squads and individual agents; squads show their leader and member count when
+available. Only actors the current user can invoke with an available runtime
+can receive a quick-create request. Squad requests run through their leader
+with the squad collaboration context, and results arrive in Inbox. Manual
+assignment and issue details also support squads; chat remains one-to-one
+with an individual agent.
+
 To check an authenticated Expo Web preview for clipped English tab labels and
 overlapping touch targets at 320px, run from the repository root:
 

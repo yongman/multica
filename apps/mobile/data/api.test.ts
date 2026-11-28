@@ -81,6 +81,27 @@ describe("api.quickCreateIssue", () => {
 
     await expect(api.quickCreateIssue(request)).rejects.toMatchObject({ status: 422, body });
   });
+
+  it("sends a squad to quick-create without substituting its leader as agent_id", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ task_id: "run-1" }, { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const body = { squad_id: "squad-1", prompt: "Ship the feature", project_id: "project-1" };
+    await expect(api.quickCreateIssue(body)).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      "https://api.example.test/api/issues/quick-create",
+      expect.objectContaining({ method: "POST", body: JSON.stringify(body) }),
+    );
+  });
+
+  it.each([
+    [403, { error: "you do not have permission to assign work to this squad" }],
+    [400, { error: "squad is archived" }],
+    [422, { code: "daemon_version_unsupported", reason: "Update the runtime" }],
+  ])("keeps the squad rejection payload for status %s", async (status, body) => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(body, { status })));
+    await expect(api.quickCreateIssue({ squad_id: "squad-1", prompt: "Ship it" }))
+      .rejects.toMatchObject({ status, body });
+  });
 });
 
 describe("api.deleteComment", () => {
