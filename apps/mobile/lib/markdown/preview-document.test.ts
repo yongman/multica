@@ -63,6 +63,7 @@ describe("preview document isolation and theme", () => {
       expect(policy).toContain("script-src 'unsafe-inline'");
       expect(policy).toContain("img-src data:");
       expect(policy).toContain("connect-src 'none'");
+      expect(policy).toContain("webrtc 'block'");
     }
   });
 

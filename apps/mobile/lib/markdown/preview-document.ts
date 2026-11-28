@@ -52,6 +52,13 @@ const MEASUREMENT_SCRIPT = `
 (() => {
   const key = ${JSON.stringify(MESSAGE_KEY)};
   const post = data => parent.postMessage({ [key]: 1, ...data }, '*');
+  // WebRTC's ICE/STUN transport is separate from fetch/connect-src on older
+  // engines. Remove its constructors before any author script executes.
+  // Sandboxed child frames have distinct opaque origins; workers and popups
+  // are blocked, so author code cannot borrow a constructor from another realm.
+  for (const name of ['RTCPeerConnection', 'webkitRTCPeerConnection', 'mozRTCPeerConnection']) {
+    Object.defineProperty(window, name, { value: undefined, writable: false, configurable: false });
+  }
   let last = -1, scheduled = false, failed = false;
   const error = message => {
     if (failed) return;
@@ -112,7 +119,7 @@ const MEASUREMENT_SCRIPT = `
 // Author documents stay offline even after opening the full-screen viewer.
 // The host policy also applies to srcdoc, so an author cannot relax it with
 // their own meta tag. Data images/fonts and inline bundled scripts still work.
-const CONTENT_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+const CONTENT_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; webrtc 'block'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 
 /** A trusted bridge hosts an opaque-origin iframe; author markup never enters it. */
 export function buildPreviewDocument({

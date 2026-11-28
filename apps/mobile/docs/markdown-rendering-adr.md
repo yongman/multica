@@ -182,6 +182,12 @@ there is no external-resource opt-in, including in full screen. Android also
 sets `blockNetworkLoads`, `blockNetworkImage` and `LOAD_NO_CACHE`, and rejects
 network/file/content requests in its native resource client. No app bearer
 token or authenticated attachment URL is injected.
+The sandbox bootstrap removes standard/vendor WebRTC peer-connection
+constructors before author scripts run, and CSP declares `webrtc 'block'` for
+engines that support it. This closes ICE/STUN transport, which older engines
+do not cover with `connect-src`. Child frames have distinct opaque origins,
+workers are denied by CSP and popups by sandbox, preventing constructor
+borrowing from another realm.
 
 Android loads the trusted host with the reserved origin
 `https://markdown-preview.multica.invalid/` using `loadDataWithBaseURL`;
