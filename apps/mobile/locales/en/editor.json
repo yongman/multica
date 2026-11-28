@@ -12,6 +12,16 @@
     "copied": "Code copied",
     "copy": "Copy code"
   },
+  "rich": {
+    "preview": "Preview",
+    "source": "Source",
+    "fullscreen": "Open full screen",
+    "loading": "Rendering preview",
+    "failed": "Could not render preview. Source is shown below.",
+    "timeout": "Preview took too long to render.",
+    "too_large": "This block is too large to preview. Source is shown below.",
+    "retry": "Retry"
+  },
   "preview": {
     "title": "Attachment preview",
     "failed": "Could not preview this file."

@@ -13,6 +13,8 @@ import { attachmentSource, selectedAttachmentId } from "@/lib/attachment-source"
  *     palettes.
  *   - Images → in-house `MarkdownImage` with expo-image + auto aspect
  *     ratio + tap-to-lightbox dispatch.
+ *   - Closed top-level html/mermaid fences → isolated RichBlock previews,
+ *     with source/copy and interactive full-screen viewing.
  *
  * Why hybrid instead of pure enriched: enriched does not let us inject
  * React for any leaf node (issues #54, #232 — maintainer: "no custom
@@ -29,7 +31,7 @@ import { attachmentSource, selectedAttachmentId } from "@/lib/attachment-source"
  *                                   "  \n" (canonical CommonMark hard
  *                                   break)
  *     ↓ splitMarkdown               marked.lexer → segments[]
- *     ↓ render per-segment          prose / code / image components
+ *     ↓ render per-segment          prose / code / image / preview components
  *
  * Mention chip note: mobile renders `mention://` links via enriched's
  * default link styling (brand-colored, underlined), matching web's
@@ -51,6 +53,7 @@ import { useMarkdownStyle } from "./markdown-style";
 import { splitMarkdown } from "./split-markdown";
 import { CodeBlock } from "./code-block";
 import { MarkdownImage } from "./markdown-image";
+import { RichBlock } from "./rich-block";
 
 // Constrain the native viewport, while letting short chat bubbles size to
 // their content. A fixed width here would expand every compact bubble.
@@ -201,6 +204,10 @@ export const Markdown = memo(function Markdown({
     <View className="min-w-0 max-w-full gap-3">
       {segments.map((seg, i) => {
         switch (seg.type) {
+          case "preview":
+            return (
+              <RichBlock key={i} kind={seg.kind} code={seg.code} title={seg.title} selectable={selectable} />
+            );
           case "prose":
             return (
               <EnrichedMarkdownText

@@ -1,5 +1,7 @@
 import { fromMarkdown } from "mdast-util-from-markdown";
 import type { Root, RootContent, Code } from "mdast";
+import { isClosedFence, parseFenceTitle } from "@multica/core/markdown/fence";
+export { parseFenceTitle } from "@multica/core/markdown/fence";
 
 /**
  * Fenced-code closedness gate for streaming RichContent (MUL-4922).
@@ -54,38 +56,13 @@ function collectCodeNodes(node: Root | RootContent, out: Code[]): void {
  * closed and would let a half-written diagram reach Mermaid.
  */
 function endsWithClosingFence(raw: string): boolean {
-  const lines = raw.split("\n");
-  const openMatch = FENCE_OPEN_RE.exec(lines[0] ?? "");
+  const openMatch = FENCE_OPEN_RE.exec(raw);
   // No opener means an indented (4-space) code block. It has no fence to leave
   // dangling, and carries no info string, so it can never dispatch to a rich
   // block — treat it as settled.
   if (!openMatch?.[1]) return true;
 
-  const openFence = openMatch[1];
-  const marker = openFence[0] as "`" | "~";
-  // A single line cannot be both opener and closer.
-  if (lines.length < 2) return false;
-
-  // mdast may or may not include the trailing newline in the node span.
-  const lastLine = (lines[lines.length - 1] === "" ? lines[lines.length - 2] : lines[lines.length - 1]) ?? "";
-  const closeMatch = /^ {0,3}([`~]+)[ \t]*$/.exec(lastLine);
-  if (!closeMatch?.[1]) return false;
-
-  const closeFence = closeMatch[1];
-  return closeFence[0] === marker && closeFence.length >= openFence.length;
-}
-
-const TITLE_RE = /(?:^|\s)title=(?:"([^"]*)"|'([^']*)'|(\S+))/;
-
-/**
- * The `title` attribute of a fence info string, e.g. `title="Weekly p95"` in
- * ```html title="Weekly p95". Double, single or no quotes.
- */
-export function parseFenceTitle(meta: string | null | undefined): string | null {
-  if (!meta) return null;
-  const match = TITLE_RE.exec(meta);
-  const title = (match?.[1] ?? match?.[2] ?? match?.[3] ?? "").trim();
-  return title || null;
+  return isClosedFence(raw);
 }
 
 export interface ClosedFence {

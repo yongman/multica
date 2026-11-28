@@ -169,7 +169,7 @@ function HighlightedCode({
   );
 }
 
-function CodeBlockHeader({ code, lang }: Props) {
+export function CodeBlockHeader({ code, lang }: Props) {
   const { isDarkColorScheme } = useColorScheme();
   const theme = isDarkColorScheme ? THEME.dark : THEME.light;
   const [copied, setCopied] = useState(false);

@@ -225,7 +225,22 @@ export function preprocessMobileMarkdown(
   attachments?: readonly Attachment[],
 ): string {
   if (!input) return "";
-  return preprocessTaskListStrikethrough(
-    preprocessFileCards(preprocessMentionShortcodes(stripHtml(input)), attachments),
+  const transform = (text: string) => preprocessTaskListStrikethrough(
+    preprocessFileCards(preprocessMentionShortcodes(stripHtml(text)), attachments),
   );
+  if (!/^ {0,3}(?:`{3,}|~{3,})(?:html|mermaid)(?:\s|$)/m.test(input)) return transform(input);
+  // Author scripts and diagram labels are source, not Markdown. Protect even
+  // unfinished rich fences so streamed code never changes before it closes.
+  const tree = fromMarkdown(input);
+  let cursor = 0;
+  let output = "";
+  for (const node of tree.children) {
+    if (node.type !== "code" || (node.lang !== "html" && node.lang !== "mermaid")) continue;
+    const start = node.position?.start.offset;
+    const end = node.position?.end.offset;
+    if (start === undefined || end === undefined) continue;
+    output += transform(input.slice(cursor, start)) + input.slice(start, end);
+    cursor = end;
+  }
+  return output + transform(input.slice(cursor));
 }
